@@ -1,0 +1,212 @@
+```gitignore
+# =========================================================
+# AutoSchedule Backend .gitignore
+# Public repository safe configuration
+# =========================================================
+
+
+# =========================================================
+# Gradle / Build
+# =========================================================
+.gradle/
+build/
+out/
+
+# Keep Gradle wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Ignore nested build directories except source build directories
+!**/src/main/**/build/
+!**/src/test/**/build/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+
+# =========================================================
+# Spring Boot
+# =========================================================
+HELP.md
+
+# Local / secret Spring config files
+application-local.yml
+application-local.yaml
+application-dev.yml
+application-dev.yaml
+application-prod.yml
+application-prod.yaml
+application-secret.yml
+application-secret.yaml
+application-private.yml
+application-private.yaml
+
+# Profile-specific properties
+application-local.properties
+application-dev.properties
+application-prod.properties
+application-secret.properties
+application-private.properties
+
+# Safe example config files may be committed
+!application-example.yml
+!application-example.yaml
+!application-example.properties
+
+
+# =========================================================
+# Environment Variables
+# =========================================================
+.env
+.env.*
+*.env
+
+# Safe example env files may be committed
+!.env.example
+
+
+# =========================================================
+# Secrets / Credentials / Certificates
+# =========================================================
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Cloud / external service credentials
+*service-account*.json
+*firebase*.json
+*google-credentials*.json
+*aws-credentials*
+credentials.json
+
+# Apple login key
+*.p8
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+
+# =========================================================
+# Logs
+# =========================================================
+logs/
+*.log
+*.log.*
+log/
+
+
+# =========================================================
+# Database / Dump / Backup
+# =========================================================
+*.sql
+*.dump
+*.bak
+*.backup
+*.db
+*.sqlite
+*.sqlite3
+
+
+# =========================================================
+# Upload / Storage / Temporary Files
+# =========================================================
+uploads/
+upload/
+files/
+storage/
+tmp/
+temp/
+
+
+# =========================================================
+# Docker / Local Infra
+# =========================================================
+docker-compose.override.yml
+docker-compose.local.yml
+docker-compose.dev.yml
+docker-compose.prod.yml
+
+# Safe example docker compose files may be committed
+!docker-compose.example.yml
+
+
+# =========================================================
+# IntelliJ IDEA
+# =========================================================
+.idea/
+*.iws
+*.iml
+*.ipr
+
+
+# =========================================================
+# Eclipse / STS
+# =========================================================
+.apt_generated/
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+bin/
+
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+
+# =========================================================
+# VS Code
+# =========================================================
+.vscode/
+
+# If your team wants to share VS Code recommendations,
+# use .vscode.example/ or commit selected files manually.
+
+
+# =========================================================
+# NetBeans
+# =========================================================
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+
+# =========================================================
+# OS Files
+# =========================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+
+# =========================================================
+# Test / Coverage Reports
+# =========================================================
+coverage/
+target/
+reports/
+test-results/
+*.exec
+
+
+# =========================================================
+# Misc
+# =========================================================
+*.swp
+*.swo
+*.tmp
+*.temp
+```
