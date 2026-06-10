@@ -123,6 +123,16 @@ files/
 storage/
 tmp/
 temp/
+.superpowers/
+
+
+# =========================================================
+# Codex / Agent Harness
+# =========================================================
+.agents/
+.codex/
+AGENTS.md
+docs/codex-harness.md
 
 
 # =========================================================
@@ -210,3 +220,6 @@ test-results/
 *.tmp
 *.temp
 ```
+
+# Docs
+docs/
