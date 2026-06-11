@@ -6,6 +6,8 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.method.ParameterValidationResult;
@@ -80,6 +82,16 @@ public class GlobalExceptionHandler {
     /**
      * 처리되지 않은 예외를 로깅하고 내부 서버 오류 응답으로 변환한다.
      */
+    /**
+     * 메서드 기반 권한 검증 실패를 403 응답으로 변환한다.
+     */
+    @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
+    public ResponseEntity<ErrorResponse> handleAccessDenied(RuntimeException exception, HttpServletRequest request) {
+        ErrorCode errorCode = ErrorCode.FORBIDDEN;
+        ErrorResponse response = ErrorResponse.of(errorCode, errorCode.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(403).body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception exception, HttpServletRequest request) {
         log.error("Unhandled exception. path={}", request.getRequestURI(), exception);

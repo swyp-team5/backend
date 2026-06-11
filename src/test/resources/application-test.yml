@@ -1,4 +1,9 @@
 spring:
+  data:
+    redis:
+      repositories:
+        enabled: false
+
   datasource:
     url: jdbc:tc:mysql:8.4.0:///autoschedule_test
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
@@ -7,7 +12,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create
     open-in-view: false
 
   sql:
@@ -18,3 +23,22 @@ logging:
   level:
     org.springframework.security: warn
     org.hibernate.SQL: warn
+
+auth:
+  jwt:
+    secret: test-secret-key-must-be-at-least-32-bytes-long
+    access-token-validity-seconds: 1800
+    refresh-token-validity-seconds: 1209600
+  social:
+    google:
+      audiences:
+        - test-google-client-id
+    kakao:
+      user-info-uri: https://kapi.kakao.com/v2/user/me
+    apple:
+      client-id: test-apple-client-id
+      team-id: test-team-id
+      key-id: test-key-id
+      private-key: test-private-key
+      jwks-uri: https://appleid.apple.com/auth/keys
+      token-uri: https://appleid.apple.com/auth/token
