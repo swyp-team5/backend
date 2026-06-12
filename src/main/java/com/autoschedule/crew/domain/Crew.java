@@ -69,4 +69,17 @@ public class Crew extends BaseEntity {
         return crew;
     }
 
+    /**
+     * 초대 코드 수락이 완료된 근무자를 사업장 크루로 등록한다.
+     */
+    public static Crew createWorker(Member member, WorkPlace workPlace) {
+        Crew crew = new Crew();
+        crew.member = member;
+        crew.workPlace = workPlace;
+        crew.joinStatus = CrewJoinStatus.APPROVED;
+        crew.crewRole = CrewRole.WORKER;
+        crew.status = CrewStatus.ACTIVE;
+        return crew;
+    }
+
 }
