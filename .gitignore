@@ -106,6 +106,7 @@ log/
 # Database / Dump / Backup
 # =========================================================
 *.sql
+!src/main/resources/db/*.sql
 *.dump
 *.bak
 *.backup
