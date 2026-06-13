@@ -3,14 +3,20 @@ package com.autoschedule.auth.dto;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 /**
  * 사장님 회원가입에서 함께 생성할 최초 사업장 정보를 받는다.
  */
 public record WorkPlaceSignupRequest(
-        @NotNull WorkPlaceSize size,
-        @NotBlank String name,
-        @NotBlank String roadAddress,
+        @NotNull(message = "사업장 규모는 필수입니다.") WorkPlaceSize size,
+        @NotBlank(message = "사업장 이름은 필수입니다.")
+        @Size(max = 100, message = "사업장 이름은 100자 이하로 입력해주세요.")
+        String name,
+        @NotBlank(message = "사업장 도로명 주소는 필수입니다.")
+        @Size(max = 255, message = "사업장 도로명 주소는 255자 이하로 입력해주세요.")
+        String roadAddress,
+        @Size(max = 100, message = "사업장 상세 주소는 100자 이하로 입력해주세요.")
         String detailAddress
 ) {
 }

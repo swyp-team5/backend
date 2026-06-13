@@ -1,6 +1,7 @@
 package com.autoschedule.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -146,6 +147,35 @@ class AuthApiIntegrationTest {
                 .andExpect(jsonPath("$.accessToken").doesNotExist());
 
         assertThat(memberRepository.count()).isZero();
+    }
+
+    /**
+     * 소셜 로그인 요청 DTO 검증 실패 시 모바일 클라이언트가 사용할 수 있는 한글 필드 메시지를 응답한다.
+     */
+    @Test
+    void socialLoginValidationFailureReturnsFieldMessages() throws Exception {
+        mockMvc.perform(post("/api/auth/social-login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "provider": null,
+                                  "device": {
+                                    "deviceId": "",
+                                    "platform": null,
+                                    "appVersion": ""
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"))
+                .andExpect(jsonPath("$.errors[?(@.field == 'provider')].message")
+                        .value(hasItem("소셜 로그인 제공자는 필수입니다.")))
+                .andExpect(jsonPath("$.errors[?(@.field == 'device.deviceId')].message")
+                        .value(hasItem("기기 ID는 필수입니다.")))
+                .andExpect(jsonPath("$.errors[?(@.field == 'device.platform')].message")
+                        .value(hasItem("기기 플랫폼은 필수입니다.")))
+                .andExpect(jsonPath("$.errors[?(@.field == 'device.appVersion')].message")
+                        .value(hasItem("앱 버전은 필수입니다.")));
     }
 
     /**
