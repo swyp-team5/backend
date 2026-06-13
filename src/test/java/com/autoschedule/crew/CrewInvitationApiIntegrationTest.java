@@ -1,6 +1,7 @@
 package com.autoschedule.crew;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -420,6 +421,129 @@ class CrewInvitationApiIntegrationTest {
         );
 
         assertThat(foreignKeyCount).isZero();
+    }
+
+    /**
+     * 사장님은 본인 사업장에서 생성한 초대 코드 발급/사용 이력을 조회할 수 있다.
+     */
+    @Test
+    void ownerReadsOwnWorkPlaceInvitationHistory() throws Exception {
+        JsonNode activeInvitation = createInvitation(owner, workPlace.getId());
+        JsonNode usedInvitation = createInvitation(owner, workPlace.getId());
+
+        mockMvc.perform(post("/api/crew-invitations/{inviteCode}/accept", usedInvitation.get("inviteCode").asText())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].invitationId").value(usedInvitation.get("invitationId").asLong()))
+                .andExpect(jsonPath("$.content[0].inviteCode").value(usedInvitation.get("inviteCode").asText()))
+                .andExpect(jsonPath("$.content[0].inviteUrl").value(
+                        "chack-chack://crew-invitations/" + usedInvitation.get("inviteCode").asText()
+                ))
+                .andExpect(jsonPath("$.content[0].status").value("USED"))
+                .andExpect(jsonPath("$.content[0].usedByMemberId").value(worker.getId()))
+                .andExpect(jsonPath("$.content[0].usedByMemberName").value("worker"))
+                .andExpect(jsonPath("$.content[0].usedAt").isNotEmpty())
+                .andExpect(jsonPath("$.content[1].invitationId").value(activeInvitation.get("invitationId").asLong()))
+                .andExpect(jsonPath("$.content[1].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.content[1].usedByMemberId").doesNotExist())
+                .andExpect(jsonPath("$.content[1].usedByMemberName").doesNotExist())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(1));
+    }
+
+    /**
+     * 초대 코드가 한 번도 생성되지 않은 사업장도 빈 이력 목록으로 조회된다.
+     */
+    @Test
+    void ownerReadsEmptyInvitationHistory() throws Exception {
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.totalPages").value(0));
+    }
+
+    /**
+     * 아직 아무도 수락하지 않은 초대 코드만 있어도 수락자 정보는 null로 조회된다.
+     */
+    @Test
+    void ownerReadsUnusedOnlyInvitationHistory() throws Exception {
+        JsonNode activeInvitation = createInvitation(owner, workPlace.getId());
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].invitationId").value(activeInvitation.get("invitationId").asLong()))
+                .andExpect(jsonPath("$.content[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.content[0].usedAt").doesNotExist())
+                .andExpect(jsonPath("$.content[0].usedByMemberId").doesNotExist())
+                .andExpect(jsonPath("$.content[0].usedByMemberName").doesNotExist());
+    }
+
+    /**
+     * 근무자는 사장님 전용 초대 코드 이력 조회 API를 호출할 수 없다.
+     */
+    @Test
+    void workerCannotReadInvitationHistory() throws Exception {
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("4003"));
+    }
+
+    /**
+     * 사장님은 다른 사장님이 소유한 사업장의 초대 코드 이력을 조회할 수 없다.
+     */
+    @Test
+    void ownerCannotReadOtherOwnersInvitationHistory() throws Exception {
+        Member otherOwner = memberRepository.save(Member.create(
+                SocialProvider.APPLE,
+                "history-other-owner-subject",
+                null,
+                "owner2",
+                "01055555555",
+                MemberRole.OWNER
+        ));
+        WorkPlace otherWorkPlace = workPlaceRepository.save(WorkPlace.create(
+                otherOwner.getId(),
+                WorkPlaceSize.ONE_TO_FOUR,
+                "other",
+                "other road",
+                null
+        ));
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/crew-invitations", otherWorkPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("4004"));
+    }
+
+    /**
+     * 초대 코드 이력 조회의 페이지 파라미터가 허용 범위를 벗어나면 검증 오류를 반환한다.
+     */
+    @Test
+    void invitationHistoryRejectsInvalidPageParameters() throws Exception {
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .param("page", "-1")
+                        .param("size", "20"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"))
+                .andExpect(jsonPath("$.errors[0].field").value("page"));
     }
 
     private JsonNode createInvitation(Member requester, Long workPlaceId) throws Exception {

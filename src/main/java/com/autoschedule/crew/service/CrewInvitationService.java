@@ -5,6 +5,7 @@ import com.autoschedule.crew.domain.CrewInvitation;
 import com.autoschedule.crew.domain.CrewInvitationStatus;
 import com.autoschedule.crew.dto.CrewInvitationAcceptResponse;
 import com.autoschedule.crew.dto.CrewInvitationCreateResponse;
+import com.autoschedule.crew.dto.CrewInvitationHistoryResponse;
 import com.autoschedule.crew.redis.CrewInvitationRedisStore;
 import com.autoschedule.crew.repository.CrewInvitationRepository;
 import com.autoschedule.crew.repository.CrewRepository;
@@ -19,7 +20,14 @@ import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -51,9 +59,7 @@ public class CrewInvitationService {
     @Transactional
     public CrewInvitationCreateResponse createInvitation(Long ownerMemberId, Long workPlaceId) {
         Member owner = findActiveMember(ownerMemberId);
-        WorkPlace workPlace = workPlaceRepository.findByIdAndOwnerMemberId(workPlaceId, owner.getId())
-                .filter(savedWorkPlace -> savedWorkPlace.getStatus() == WorkPlaceStatus.ACTIVE)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "초대할 수 있는 사업장을 찾을 수 없습니다."));
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner);
 
         String inviteCode = generateUniqueInviteCode();
         LocalDateTime expiresAt = LocalDateTime.now().plus(INVITATION_TTL);
@@ -96,6 +102,31 @@ public class CrewInvitationService {
         invitation.markUsed(worker, LocalDateTime.now());
         registerAfterCommit(() -> crewInvitationRedisStore.deleteAll(inviteCode));
         return CrewInvitationAcceptResponse.from(crew);
+    }
+
+    /**
+     * 사장님이 본인 사업장에서 생성한 초대 코드 발급/사용 이력을 최신순으로 조회한다.
+     */
+    @Transactional(readOnly = true)
+    public CrewInvitationHistoryResponse getInvitationHistory(
+            Long ownerMemberId,
+            Long workPlaceId,
+            int page,
+            int size
+    ) {
+        Member owner = findActiveMember(ownerMemberId);
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner);
+        PageRequest pageRequest = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"))
+        );
+        Page<CrewInvitation> invitations = crewInvitationRepository.findByWorkPlace_IdAndDeletedAtIsNull(
+                workPlace.getId(),
+                pageRequest
+        );
+        Map<Long, String> usedMemberNames = findUsedMemberNames(invitations);
+        return CrewInvitationHistoryResponse.from(invitations, usedMemberNames);
     }
 
     /**
@@ -167,6 +198,34 @@ public class CrewInvitationService {
         return memberRepository.findById(memberId)
                 .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
+    }
+
+    /**
+     * 사장님이 소유한 활성 사업장을 조회하고 없으면 404 오류를 반환한다.
+     */
+    private WorkPlace findOwnedActiveWorkPlace(Long workPlaceId, Member owner) {
+        return workPlaceRepository.findByIdAndOwnerMemberId(workPlaceId, owner.getId())
+                .filter(savedWorkPlace -> savedWorkPlace.getStatus() == WorkPlaceStatus.ACTIVE)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "초대할 수 있는 사업장을 찾을 수 없습니다."));
+    }
+
+    /**
+     * 초대를 수락한 회원 ID 스냅샷을 기준으로 응답에 표시할 회원명을 조회한다.
+     */
+    private Map<Long, String> findUsedMemberNames(Page<CrewInvitation> invitations) {
+        Set<Long> usedMemberIds = invitations.getContent()
+                .stream()
+                .map(CrewInvitation::getUsedByMemberId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (usedMemberIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return memberRepository.findAllById(usedMemberIds)
+                .stream()
+                .collect(Collectors.toMap(Member::getId, Member::getName, (first, second) -> first));
     }
 
     /**

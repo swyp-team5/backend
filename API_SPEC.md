@@ -14,6 +14,7 @@
 - 로그아웃
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
+- 사업장 크루 초대 코드 이력 조회
 
 모든 API URL은 `/api/*` 규칙을 따른다. `/api/v1/*` 형식은 사용하지 않는다.
 
@@ -813,6 +814,102 @@ ttl: 1 hour
 | 401 | 4002 | access token 없음 또는 유효하지 않음 |
 | 403 | 4003 | WORKER 권한이 아님 |
 | 409 | 4005 | 이미 해당 사업장 크루로 등록되어 있음 |
+
+### 7.3 사업장 크루 초대 코드 이력 조회
+
+사장님이 본인 사업장에서 생성한 비지명 초대 코드의 발급/사용 이력을 조회한다.
+
+이 API는 “누구에게 초대 링크를 보냈는지”가 아니라 “어떤 초대 코드가 생성되었고, 사용되었다면 누가 수락했는지”를 반환한다.
+
+```http
+GET /api/work-places/{workPlaceId}/crew-invitations?page=0&size=20
+```
+
+#### 인증
+
+```http
+Authorization: Bearer {OWNER_ACCESS_TOKEN}
+```
+
+`OWNER` 권한 회원만 호출할 수 있다.
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 초대 코드 이력을 조회할 사업장 ID |
+
+#### Query Parameter
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| page | number | N | 0 | 0부터 시작하는 페이지 번호 |
+| size | number | N | 20 | 페이지 크기. 1 이상 100 이하 |
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "content": [
+    {
+      "invitationId": 1,
+      "workPlaceId": 10,
+      "inviteCode": "839204",
+      "inviteUrl": "chack-chack://crew-invitations/839204",
+      "status": "USED",
+      "expiresAt": "2026-06-13T15:00:00",
+      "usedAt": "2026-06-13T14:10:00",
+      "usedByMemberId": 20,
+      "usedByMemberName": "정진섭",
+      "failedAttemptCount": 0,
+      "createdAt": "2026-06-13T14:00:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| content[].invitationId | number | 크루 초대 ID |
+| content[].workPlaceId | number | 사업장 ID |
+| content[].inviteCode | string | 6자리 숫자 초대 코드 |
+| content[].inviteUrl | string | 앱 딥링크 초대 URL |
+| content[].status | string | 초대 코드 상태 |
+| content[].expiresAt | string | 초대 코드 만료 시각 |
+| content[].usedAt | string/null | 초대 코드 사용 시각 |
+| content[].usedByMemberId | number/null | 초대 코드를 수락한 회원 ID 스냅샷 |
+| content[].usedByMemberName | string/null | 초대 코드를 수락한 회원 이름. 회원 조회가 불가능하면 null |
+| content[].failedAttemptCount | number | RDB에 기록된 실패 횟수 |
+| content[].createdAt | string | 초대 코드 생성 시각 |
+| page | number | 현재 페이지 번호 |
+| size | number | 페이지 크기 |
+| totalElements | number | 전체 초대 코드 수 |
+| totalPages | number | 전체 페이지 수 |
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 조회할 수 있다.
+- 사장님 본인이 소유한 활성 사업장의 초대 코드만 조회할 수 있다.
+- 초대 대상자를 지명하지 않는 구조이므로, 수락 전에는 `usedByMemberId`, `usedByMemberName`, `usedAt`이 null이다.
+- 수락 완료된 초대 코드는 실제 수락한 근무자 정보가 `usedByMemberId`, `usedByMemberName`으로 표시된다.
+- 기본 정렬은 최신 생성순이다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | `page`, `size` 검증 실패 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+| 404 | 4004 | 조회할 수 있는 사업장을 찾을 수 없음 |
 
 ## 8. 크루 초대 DB 정책
 

@@ -3,6 +3,8 @@ package com.autoschedule.crew.repository;
 import com.autoschedule.crew.domain.CrewInvitation;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -24,4 +26,9 @@ public interface CrewInvitationRepository extends JpaRepository<CrewInvitation, 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select invitation from CrewInvitation invitation where invitation.inviteCode = :inviteCode")
     Optional<CrewInvitation> findByInviteCodeForUpdate(@Param("inviteCode") String inviteCode);
+
+    /**
+     * 사업장에서 발급한 삭제되지 않은 초대 코드 이력을 페이지 단위로 조회한다.
+     */
+    Page<CrewInvitation> findByWorkPlace_IdAndDeletedAtIsNull(Long workPlaceId, Pageable pageable);
 }
