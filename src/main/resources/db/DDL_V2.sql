@@ -120,6 +120,9 @@ CREATE TABLE terms (
 
     PRIMARY KEY (terms_id),
 
+    CONSTRAINT uk_terms_type_title_version
+        UNIQUE (terms_type, title, version),
+
     CONSTRAINT chk_terms_required
         CHECK (required IN (0, 1))
 
@@ -129,9 +132,6 @@ CREATE TABLE terms (
 
 CREATE INDEX idx_terms_type_status
     ON terms (terms_type, status);
-
-CREATE INDEX idx_terms_status_required
-    ON terms (status, required);
 
 
 
@@ -162,3 +162,6 @@ CREATE TABLE member_terms_agreement (
 
 CREATE INDEX idx_member_terms_agreement_member_id
     ON member_terms_agreement (member_id);
+
+CREATE INDEX idx_member_terms_agreement_terms_id
+    ON member_terms_agreement (terms_id);

@@ -14,7 +14,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -25,12 +24,7 @@ import lombok.NoArgsConstructor;
  */
 @Getter
 @Entity
-@Table(
-        name = "crew_invitation",
-        uniqueConstraints = {
-                @UniqueConstraint(name = "uk_crew_invitation_invite_code", columnNames = "invite_code")
-        }
-)
+@Table(name = "crew_invitation")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CrewInvitation extends BaseEntity {
 

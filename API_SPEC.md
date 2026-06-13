@@ -7,6 +7,7 @@
 현재 구현 범위는 다음과 같다.
 
 - 소셜 로그인
+- 회원가입 약관 조회
 - 사장님 회원가입
 - 근무자 회원가입
 - Access Token / Refresh Token 재발급
@@ -40,7 +41,7 @@ Content-Type: application/json
 Authorization: Bearer {accessToken}
 ```
 
-`/api/auth/**` API는 인증 없이 호출할 수 있다.
+`/api/auth/**` API와 `GET /api/terms/signup` API는 인증 없이 호출할 수 있다.
 
 ### 2.4 지원 소셜 제공자
 
@@ -216,9 +217,81 @@ Validation 실패 시 `errors`에 field 단위 메시지가 포함된다.
 
 `accessToken`을 함께 보내도 Apple 인증에는 사용하지 않는다.
 
-## 5. 인증 API
+## 5. 약관 조회 API
 
-### 5.1 소셜 로그인
+### 5.1 회원가입 약관 조회
+
+회원가입 전에 호출하는 공개 API다. 클라이언트가 약관 유형을 직접 조합하지 않고 서버가 회원가입 역할 기준으로 필요한 활성 약관을 조합해 반환한다.
+
+```http
+GET /api/terms/signup?role=OWNER
+GET /api/terms/signup?role=WORKER
+```
+
+#### 요청 파라미터
+
+| 파라미터 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| role | string | Y | 회원가입 역할. `OWNER`, `WORKER` |
+
+#### 역할별 반환 약관
+
+| role | 반환 약관 유형 |
+| --- | --- |
+| OWNER | `COMMON`, `OWNER` |
+| WORKER | `COMMON`, `WORKER` |
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "terms": [
+    {
+      "termsId": 1,
+      "termsType": "COMMON",
+      "title": "만 14세 이상입니다.",
+      "required": true,
+      "version": "1.0.0",
+      "content": "약관 본문"
+    },
+    {
+      "termsId": 5,
+      "termsType": "OWNER",
+      "title": "개인정보보호의무",
+      "required": true,
+      "version": "1.0.0",
+      "content": "약관 본문"
+    }
+  ]
+}
+```
+
+#### 응답 필드
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| terms | array | 약관 목록 |
+| terms[].termsId | number | 약관 ID |
+| terms[].termsType | string | 약관 유형. `COMMON`, `OWNER`, `WORKER` |
+| terms[].title | string | 약관 제목 |
+| terms[].required | boolean | 필수 동의 여부 |
+| terms[].version | string | 약관 버전 |
+| terms[].content | string | 약관 본문 |
+
+#### 검증 규칙
+
+- `status = ACTIVE`인 약관만 반환한다.
+- 응답 정렬은 `termsType`, `termsId` 오름차순이다.
+- `role`이 없으면 400으로 응답한다.
+- `OWNER`, `WORKER`가 아닌 role 값은 400으로 응답한다.
+
+## 6. 인증 API
+
+### 6.1 소셜 로그인
 
 기존 회원 로그인 여부를 확인한다.
 
@@ -311,7 +384,7 @@ POST /api/auth/social-login
 | 401 | 4002 | 소셜 토큰 검증 실패 |
 | 500 | 500 | 소셜 로그인 설정 누락 |
 
-### 5.2 사장님 회원가입
+### 6.2 사장님 회원가입
 
 소셜 인증 정보를 다시 검증한 뒤 사장님 회원가입을 완료한다.
 
@@ -401,7 +474,7 @@ POST /api/auth/signup/owner
 | 409 | 4005 | 이미 가입된 소셜 계정 |
 | 500 | 500 | 소셜 로그인 설정 누락 |
 
-### 5.3 근무자 회원가입
+### 6.3 근무자 회원가입
 
 소셜 인증 정보를 다시 검증한 뒤 근무자 회원가입을 완료한다.
 
@@ -477,7 +550,7 @@ POST /api/auth/signup/worker
 | 409 | 4005 | 이미 가입된 소셜 계정 |
 | 500 | 500 | 소셜 로그인 설정 누락 |
 
-### 5.4 토큰 재발급
+### 6.4 토큰 재발급
 
 Refresh token을 검증하고 access token과 refresh token을 새로 발급한다.
 
@@ -534,7 +607,7 @@ ttl: refreshTokenExpiresIn
 | 400 | 4000 | `refreshToken`, `deviceId` 누락 |
 | 401 | 4002 | refresh token 만료, 서명 오류, Redis 세션 없음, hash 불일치, 비활성 회원 |
 
-### 5.5 로그아웃
+### 6.5 로그아웃
 
 현재 기기의 refresh token 세션을 삭제한다.
 
@@ -582,9 +655,9 @@ POST /api/auth/logout
 | 400 | 4000 | `refreshToken`, `deviceId` 누락 |
 | 401 | 4002 | refresh token 만료, 서명 오류, Redis 세션 없음, hash 불일치, 비활성 회원 |
 
-## 6. 크루 초대 API
+## 7. 크루 초대 API
 
-### 6.1 사업장 크루 초대 코드 생성
+### 7.1 사업장 크루 초대 코드 생성
 
 사장님이 본인 소유 사업장에 근무자를 초대하기 위한 1회용 6자리 초대 코드를 생성한다.
 
@@ -660,7 +733,7 @@ ttl: 1 hour
 | 404 | 4004 | 초대할 수 있는 사업장을 찾을 수 없음 |
 | 500 | 500 | 초대 코드 생성 실패 |
 
-### 6.2 사업장 크루 초대 코드 수락
+### 7.2 사업장 크루 초대 코드 수락
 
 근무자가 초대 코드를 수락하면 해당 사업장 크루로 즉시 승인 등록된다.
 
@@ -741,9 +814,9 @@ ttl: 1 hour
 | 403 | 4003 | WORKER 권한이 아님 |
 | 409 | 4005 | 이미 해당 사업장 크루로 등록되어 있음 |
 
-## 7. 크루 초대 DB 정책
+## 8. 크루 초대 DB 정책
 
-### 7.1 crew_invitation
+### 8.1 crew_invitation
 
 `crew_invitation`은 초대 코드 발급과 사용 이력을 남기는 감사 테이블이다.
 
@@ -787,16 +860,16 @@ idx_crew_invitation_invite_code_status (invite_code, status)
 idx_crew_invitation_expires_at_status (expires_at, status)
 ```
 
-## 8. 클라이언트 플로우
+## 9. 클라이언트 플로우
 
-### 8.1 기존 회원 로그인
+### 9.1 기존 회원 로그인
 
 1. 앱에서 소셜 SDK 로그인 수행
 2. Google은 `idToken`, Kakao는 `accessToken`, Apple은 `idToken + authorizationCode` 획득
 3. `POST /api/auth/social-login` 호출
 4. `LOGIN_SUCCESS`이면 토큰 저장 후 홈 진입
 
-### 8.2 신규 회원가입
+### 9.2 신규 회원가입
 
 1. 앱에서 소셜 SDK 로그인 수행
 2. `POST /api/auth/social-login` 호출
@@ -808,7 +881,7 @@ idx_crew_invitation_expires_at_status (expires_at, status)
 
 주의: 회원가입 API 호출 시 소셜 인증 정보를 다시 전달해야 한다.
 
-### 8.3 크루 초대
+### 9.3 크루 초대
 
 1. 사장님이 사업장 화면에서 초대 링크 생성을 요청한다.
 2. 앱은 `POST /api/work-places/{workPlaceId}/crew-invitations`를 호출한다.
@@ -818,25 +891,24 @@ idx_crew_invitation_expires_at_status (expires_at, status)
 6. 앱은 `POST /api/crew-invitations/{inviteCode}/accept`를 호출한다.
 7. 성공하면 근무자는 해당 사업장 크루로 즉시 승인된다.
 
-### 8.4 토큰 재발급
+### 9.4 토큰 재발급
 
 1. access token 만료 또는 인증 실패 감지
 2. 저장된 refresh token과 deviceId로 `POST /api/auth/token/refresh` 호출
 3. 성공 시 access token과 refresh token을 모두 교체 저장
 4. 실패 시 로컬 토큰 삭제 후 로그인 화면으로 이동
 
-### 8.5 로그아웃
+### 9.5 로그아웃
 
 1. 저장된 refresh token과 deviceId로 `POST /api/auth/logout` 호출
 2. 성공 또는 실패와 관계없이 클라이언트 로컬 토큰 삭제 권장
 3. 서버는 일치하는 Redis refresh token 세션만 삭제
 
-## 9. 현재 구현 참고사항
+## 10. 현재 구현 참고사항
 
 - 민감 정보와 배포 환경 정보는 API 명세에 기록하지 않는다.
 - 배포 관련 설정은 별도 보안 채널에서 관리한다.
 
-- 약관 조회 API는 아직 구현되어 있지 않다.
 - 현재 회원가입 API는 요청한 `termsId`가 DB에 존재해야 한다.
 - `phoneNumber`는 하이픈 없는 11자리 숫자 형식만 허용한다.
 - 소셜 이메일은 provider 응답에 없을 수 있으며, 없어도 회원가입을 허용한다.

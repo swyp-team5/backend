@@ -279,6 +279,22 @@ class AuthApiIntegrationTest {
     }
 
     /**
+     * 근무자 회원가입에서 근무자 필수 약관에 동의하지 않으면 회원을 만들지 않는다.
+     */
+    @Test
+    void workerSignupRejectsMissingWorkerRequiredTerms() throws Exception {
+        termsRepository.save(Terms.create(TermsType.WORKER, "worker-required", true, TermsStatus.ACTIVE, "content", "1.0.0"));
+
+        mockMvc.perform(post("/api/auth/signup/worker")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(workerSignupBody("device-worker-invalid")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4001"));
+
+        assertThat(memberRepository.count()).isZero();
+    }
+
+    /**
      * 근무자 회원가입은 사업장을 만들지 않고 회원만 만든 뒤 즉시 로그인 토큰을 반환한다.
      */
     @Test

@@ -1,6 +1,8 @@
 package com.autoschedule.global.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * 컨트롤러 계층에서 발생한 예외를 표준 에러 응답으로 변환한다.
@@ -80,8 +83,39 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 처리되지 않은 예외를 로깅하고 내부 서버 오류 응답으로 변환한다.
+     * 컨트롤러 메서드 파라미터의 Bean Validation 실패를 필드별 오류 목록이 포함된 400 응답으로 변환한다.
      */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        List<ErrorResponse.FieldError> fieldErrors = exception.getConstraintViolations()
+                .stream()
+                .map(this::toFieldError)
+                .toList();
+
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        ErrorResponse response = ErrorResponse.of(errorCode, errorCode.getMessage(), fieldErrors, request.getRequestURI());
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    /**
+     * 요청 파라미터 타입 변환 실패를 필드별 오류 목록이 포함된 400 응답으로 변환한다.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request
+    ) {
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        List<ErrorResponse.FieldError> fieldErrors = List.of(
+                new ErrorResponse.FieldError(exception.getName(), DEFAULT_FIELD_ERROR_MESSAGE)
+        );
+        ErrorResponse response = ErrorResponse.of(errorCode, errorCode.getMessage(), fieldErrors, request.getRequestURI());
+        return ResponseEntity.badRequest().body(response);
+    }
+
     /**
      * 메서드 기반 권한 검증 실패를 403 응답으로 변환한다.
      */
@@ -110,6 +144,17 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 메서드 파라미터 검증 오류를 API 응답용 필드 오류로 변환한다.
+     */
+    private ErrorResponse.FieldError toFieldError(ConstraintViolation<?> violation) {
+        String field = resolveConstraintViolationField(violation);
+        String message = StringUtils.hasText(violation.getMessage())
+                ? violation.getMessage()
+                : DEFAULT_FIELD_ERROR_MESSAGE;
+        return new ErrorResponse.FieldError(field, message);
+    }
+
+    /**
      * 검증 실패가 발생한 메서드 파라미터의 외부 노출 이름을 결정한다.
      */
     private String resolveParameterName(ParameterValidationResult result) {
@@ -135,6 +180,18 @@ public class GlobalExceptionHandler {
 
         String parameterName = result.getMethodParameter().getParameterName();
         return StringUtils.hasText(parameterName) ? parameterName : "parameter";
+    }
+
+    /**
+     * 메서드 검증 경로에서 외부 요청 필드명으로 사용할 마지막 경로 요소를 추출한다.
+     */
+    private String resolveConstraintViolationField(ConstraintViolation<?> violation) {
+        String propertyPath = violation.getPropertyPath().toString();
+        int lastDotIndex = propertyPath.lastIndexOf('.');
+        if (lastDotIndex >= 0 && lastDotIndex + 1 < propertyPath.length()) {
+            return propertyPath.substring(lastDotIndex + 1);
+        }
+        return StringUtils.hasText(propertyPath) ? propertyPath : "parameter";
     }
 
     /**

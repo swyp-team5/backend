@@ -30,10 +30,10 @@ import com.autoschedule.terms.domain.TermsStatus;
 import com.autoschedule.terms.domain.TermsType;
 import com.autoschedule.terms.repository.MemberTermsAgreementRepository;
 import com.autoschedule.terms.repository.TermsRepository;
+import com.autoschedule.terms.service.SignupTermsPolicy;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.time.Duration;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +62,7 @@ public class AuthService {
     private final RefreshTokenStore refreshTokenStore;
     private final JwtTokenProvider jwtTokenProvider;
     private final TokenHashService tokenHashService;
+    private final SignupTermsPolicy signupTermsPolicy;
 
     /**
      * 소셜 인증 정보를 검증하고 기존 회원이면 로그인 토큰을 발급한다.
@@ -95,7 +96,7 @@ public class AuthService {
                 request.authorizationCode()
         ));
         ensureNotRegistered(socialUserInfo);
-        validateRequiredTerms(request.termsAgreements(), EnumSet.of(TermsType.COMMON, TermsType.OWNER));
+        validateRequiredTerms(request.termsAgreements(), signupTermsPolicy.resolve(MemberRole.OWNER));
 
         Member member = memberRepository.save(Member.create(
                 socialUserInfo.provider(),
@@ -129,7 +130,7 @@ public class AuthService {
                 request.authorizationCode()
         ));
         ensureNotRegistered(socialUserInfo);
-        validateRequiredTerms(request.termsAgreements(), EnumSet.of(TermsType.COMMON));
+        validateRequiredTerms(request.termsAgreements(), signupTermsPolicy.resolve(MemberRole.WORKER));
 
         Member member = memberRepository.save(Member.create(
                 socialUserInfo.provider(),

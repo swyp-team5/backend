@@ -16,4 +16,12 @@ public interface TermsRepository extends JpaRepository<Terms, Long> {
      * 지정한 약관 유형들의 활성 약관을 조회한다.
      */
     List<Terms> findByTermsTypeInAndStatus(Collection<TermsType> termsTypes, TermsStatus status);
+
+    /**
+     * 지정한 약관 유형들의 활성 약관을 회원가입 화면 표시 순서로 조회한다.
+     */
+    List<Terms> findByTermsTypeInAndStatusOrderByTermsTypeAscIdAsc(
+            Collection<TermsType> termsTypes,
+            TermsStatus status
+    );
 }
