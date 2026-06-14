@@ -47,6 +47,9 @@ dependencies {
 	// Apple ID Token / JWKS Verification
 	implementation 'com.nimbusds:nimbus-jose-jwt:9.37.4'
 
+	// Firebase Cloud Messaging
+	implementation 'com.google.firebase:firebase-admin:9.9.0'
+
 	// JWT - Our service token
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'

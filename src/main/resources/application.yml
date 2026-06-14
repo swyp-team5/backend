@@ -24,3 +24,8 @@ auth:
       private-key: ${APPLE_PRIVATE_KEY:}
       jwks-uri: ${APPLE_JWKS_URI:https://appleid.apple.com/auth/keys}
       token-uri: ${APPLE_TOKEN_URI:https://appleid.apple.com/auth/token}
+
+notification:
+  fcm:
+    enabled: ${FCM_ENABLED:false}
+    credentials-path: ${FCM_CREDENTIALS_PATH:}

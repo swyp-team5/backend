@@ -1366,9 +1366,192 @@ OWNER
 | 403 | 4003 | OWNER 권한이 아니거나 사업장 공지 접근 권한 없음 |
 | 404 | 4004 | 사업장, 공지, 댓글을 찾을 수 없음 |
 
-## 9. 크루 초대 DB 정책
+## 9. 알림 API
 
-### 9.1 crew_invitation
+알림은 회원 기준으로 저장된다. 앱 내 알림함은 FCM 발송 성공 여부와 무관하게 저장되며, `PUSH` 정책 알림만 활성 FCM 토큰별 발송을 시도한다.
+
+### 9.1 FCM 토큰 등록 또는 갱신
+
+```http
+POST /api/fcm-tokens
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 요청 본문
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| deviceId | string | Y | 앱 기기 식별자. 100자 이하 |
+| token | string | Y | FCM registration token. 512자 이하 |
+| platform | string | Y | `ANDROID`, `IOS` |
+| appVersion | string | Y | 앱 버전. 30자 이하 |
+
+#### 요청 예시
+
+```json
+{
+  "deviceId": "device-uuid",
+  "token": "fcm-registration-token",
+  "platform": "ANDROID",
+  "appVersion": "1.0.0"
+}
+```
+
+#### 성공 응답
+
+```json
+{
+  "fcmTokenId": 1,
+  "deviceId": "device-uuid",
+  "platform": "ANDROID",
+  "appVersion": "1.0.0",
+  "status": "ACTIVE",
+  "lastRegisteredAt": "2026-06-14T19:00:00"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 로그인한 회원의 토큰만 등록 또는 갱신한다.
+- 같은 `member_id + device_id`가 이미 있으면 새 row를 만들지 않고 기존 row를 갱신한다.
+- 다시 등록하면 `status`는 `ACTIVE`가 된다.
+- FCM 토큰 row는 물리 삭제하지 않는다.
+
+### 9.2 FCM 토큰 비활성화
+
+```http
+DELETE /api/fcm-tokens/devices/{deviceId}
+Authorization: Bearer {accessToken}
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+#### 주요 비즈니스 규칙
+
+- 로그인한 회원 본인의 `deviceId`에 해당하는 토큰만 비활성화한다.
+- 토큰이 없어도 idempotent하게 `204 No Content`를 반환한다.
+- 다른 회원의 같은 `deviceId` 토큰에는 영향을 주지 않는다.
+
+### 9.3 알림함 조회
+
+```http
+GET /api/notifications?cursorId=10&size=20
+Authorization: Bearer {accessToken}
+```
+
+#### Query Parameter
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| cursorId | number | N | null | 마지막으로 조회한 알림 ID. 전달하면 해당 ID보다 작은 알림부터 조회 |
+| size | number | N | 20 | 조회 개수. 1~100 |
+
+#### 성공 응답
+
+```json
+{
+  "content": [
+    {
+      "notificationId": 10,
+      "notificationType": "NOTICE",
+      "pushPolicy": "PUSH",
+      "title": "공지 알림",
+      "body": "새 공지가 등록되었습니다.",
+      "data": {
+        "noticeId": "1"
+      },
+      "read": false,
+      "readAt": null,
+      "createdAt": "2026-06-14T19:00:00"
+    }
+  ],
+  "nextCursorId": 10,
+  "hasNext": true
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 본인 알림만 조회할 수 있다.
+- 최신 알림부터 `notification_id DESC`로 조회한다.
+- 다음 페이지가 없으면 `nextCursorId`는 null이고 `hasNext`는 false다.
+- 삭제된 알림은 조회하지 않는다.
+
+### 9.4 알림 단건 읽음 처리
+
+```http
+PATCH /api/notifications/{notificationId}/read
+Authorization: Bearer {accessToken}
+```
+
+#### 성공 응답
+
+```json
+{
+  "notificationId": 10,
+  "notificationType": "NOTICE",
+  "pushPolicy": "PUSH",
+  "title": "공지 알림",
+  "body": "새 공지가 등록되었습니다.",
+  "data": {
+    "noticeId": "1"
+  },
+  "read": true,
+  "readAt": "2026-06-14T19:01:00",
+  "createdAt": "2026-06-14T19:00:00"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 본인 알림만 읽음 처리할 수 있다.
+- 이미 읽은 알림은 기존 `readAt`을 유지한다.
+- 다른 회원의 알림은 존재 여부를 노출하지 않고 `404`로 응답한다.
+
+### 9.5 모든 알림 읽음 처리
+
+```http
+PATCH /api/notifications/read-all
+Authorization: Bearer {accessToken}
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+#### 주요 비즈니스 규칙
+
+- 본인의 미읽음 활성 알림만 읽음 처리한다.
+- 다른 회원의 알림에는 영향을 주지 않는다.
+
+### 9.6 내부 알림 발송 정책
+
+도메인 기능은 공개 API가 아니라 내부 서비스 `NotificationCommandService.sendToMember(...)`를 호출해 알림을 생성한다.
+
+- `IN_APP_ONLY`: `notification`만 저장하고 FCM 발송을 시도하지 않는다.
+- `PUSH`: `notification` 저장 후 수신 회원의 활성 `fcm_token`마다 FCM 발송을 시도한다.
+- FCM 발송 시도 결과는 `notification_delivery`에 저장한다.
+- Firebase 설정이 비활성화된 환경에서는 FCM 발송을 시도하지 않고 실패 delivery를 기록한다.
+- Firebase가 등록되지 않은 토큰이라고 응답하면 해당 `fcm_token`을 `INACTIVE`로 변경한다.
+
+### 9.7 알림 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 요청 본문, 페이지, 커서 검증 실패 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 404 | 4004 | 알림을 찾을 수 없음 |
+
+## 10. 크루 초대 DB 정책
+
+### 10.1 crew_invitation
 
 `crew_invitation`은 초대 코드 발급과 사용 이력을 남기는 감사 테이블이다.
 
@@ -1412,9 +1595,9 @@ idx_crew_invitation_invite_code_status (invite_code, status)
 idx_crew_invitation_expires_at_status (expires_at, status)
 ```
 
-## 10. 공지사항 DB 정책
+## 11. 공지사항 DB 정책
 
-### 10.1 notice
+### 11.1 notice
 
 `notice`는 사업장별 공지 게시글을 저장한다.
 
@@ -1452,7 +1635,7 @@ idx_notice_work_place_status_deleted_created_id (work_place_id, status, deleted_
 idx_notice_work_place_representative_status_deleted (work_place_id, representative, status, deleted_at)
 ```
 
-### 10.2 notice_comment
+### 11.2 notice_comment
 
 `notice_comment`는 공지별 사장님 댓글을 저장한다.
 
@@ -1485,16 +1668,145 @@ DELETED
 idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, notice_comment_id)
 ```
 
-## 11. 클라이언트 플로우
+## 12. 알림 DB 정책
 
-### 11.1 기존 회원 로그인
+### 12.1 fcm_token
+
+`fcm_token`은 회원의 기기별 FCM registration token을 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| fcm_token_id | BIGINT | N | PK |
+| member_id | BIGINT | N | 회원 ID, `member` FK |
+| device_id | VARCHAR(100) | N | 앱 기기 식별자 |
+| token | VARCHAR(512) | N | FCM registration token |
+| platform | VARCHAR(20) | N | `ANDROID`, `IOS` |
+| app_version | VARCHAR(30) | N | 앱 버전 |
+| status | VARCHAR(20) | N | 토큰 상태 |
+| last_registered_at | DATETIME | N | 마지막 등록 또는 갱신 시각 |
+| last_used_at | DATETIME | Y | 마지막 발송 시도 시각 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 비활성화 시각 |
+
+#### 상태값
+
+```text
+ACTIVE
+INACTIVE
+```
+
+#### 제약조건
+
+- `member_id`는 `member.member_id`를 참조한다.
+- `member_id + device_id`는 UNIQUE다.
+- row는 물리 삭제하지 않고 `INACTIVE`로 비활성화한다.
+
+#### 인덱스
+
+```text
+idx_fcm_token_member_status (member_id, status)
+idx_fcm_token_token (token)
+```
+
+### 12.2 notification
+
+`notification`은 회원별 앱 내 알림함 데이터를 저장한다. FCM 앱 푸시 대상 알림도 먼저 이 테이블에 저장된다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notification_id | BIGINT | N | PK |
+| receiver_member_id | BIGINT | N | 수신 회원 ID, `member` FK |
+| notification_type | VARCHAR(50) | N | 알림 업무 유형 |
+| push_policy | VARCHAR(20) | N | `IN_APP_ONLY`, `PUSH` |
+| title | VARCHAR(100) | N | 알림 제목 |
+| body | VARCHAR(500) | N | 알림 본문 |
+| data | JSON | Y | 앱 라우팅 등에 사용할 부가 데이터 |
+| read_at | DATETIME | Y | 읽음 처리 시각 |
+| status | VARCHAR(20) | N | 알림 상태 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 삭제 시각 |
+
+#### 상태값
+
+```text
+ACTIVE
+DELETED
+```
+
+#### 제약조건
+
+- `receiver_member_id`는 `member.member_id`를 참조한다.
+
+#### 인덱스
+
+```text
+idx_notification_receiver_status_created (receiver_member_id, status, created_at)
+idx_notification_receiver_read (receiver_member_id, read_at)
+```
+
+### 12.3 notification_delivery
+
+`notification_delivery`는 FCM 앱 푸시 발송 시도와 결과 이력을 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notification_delivery_id | BIGINT | N | PK |
+| notification_id | BIGINT | N | 알림 ID, `notification` FK |
+| fcm_token_id | BIGINT | Y | 발송 대상 FCM 토큰 ID 스냅샷, FK 없음 |
+| channel | VARCHAR(20) | N | 발송 채널. 현재 `FCM` |
+| status | VARCHAR(20) | N | 발송 결과 |
+| provider_message_id | VARCHAR(255) | Y | Firebase provider message ID |
+| error_code | VARCHAR(100) | Y | 발송 실패 코드 |
+| error_message | VARCHAR(500) | Y | 발송 실패 메시지 |
+| attempted_at | DATETIME | Y | 발송 시도 시각 |
+| sent_at | DATETIME | Y | 발송 성공 시각 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 삭제 시각 |
+
+#### 상태값
+
+```text
+SUCCESS
+FAILED
+```
+
+#### 제약조건
+
+- `notification_id`는 `notification.notification_id`를 참조한다.
+- `fcm_token_id`는 FK를 걸지 않는 비정규화 컬럼이다.
+
+#### 인덱스
+
+```text
+idx_notification_delivery_notification (notification_id)
+idx_notification_delivery_status_attempted (status, attempted_at)
+idx_notification_delivery_fcm_token (fcm_token_id)
+```
+
+### 12.4 FCM 운영 설정
+
+Firebase Admin SDK는 Java 서버 SDK를 사용한다. 서버는 기본적으로 FCM 발송 비활성 상태로 기동한다.
+
+| 환경변수 | 설명 |
+| --- | --- |
+| FCM_ENABLED | `true`이면 Firebase Admin SDK sender를 활성화한다. 기본값은 `false` |
+| FCM_CREDENTIALS_PATH | Firebase 서비스 계정 JSON 파일 경로. 비어 있으면 Application Default Credentials를 사용한다 |
+
+서비스 계정 JSON 파일 내용은 저장소와 API 명세에 기록하지 않는다.
+
+## 13. 클라이언트 플로우
+
+### 13.1 기존 회원 로그인
 
 1. 앱에서 소셜 SDK 로그인 수행
 2. Google은 `idToken`, Kakao는 `accessToken`, Apple은 `idToken + authorizationCode` 획득
 3. `POST /api/auth/social-login` 호출
 4. `LOGIN_SUCCESS`이면 토큰 저장 후 홈 진입
 
-### 11.2 신규 회원가입
+### 13.2 신규 회원가입
 
 1. 앱에서 소셜 SDK 로그인 수행
 2. `POST /api/auth/social-login` 호출
@@ -1506,7 +1818,7 @@ idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, noti
 
 주의: 회원가입 API 호출 시 소셜 인증 정보를 다시 전달해야 한다.
 
-### 11.3 크루 초대
+### 13.3 크루 초대
 
 1. 사장님이 사업장 화면에서 초대 링크 생성을 요청한다.
 2. 앱은 `POST /api/work-places/{workPlaceId}/crew-invitations`를 호출한다.
@@ -1516,20 +1828,20 @@ idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, noti
 6. 앱은 `POST /api/crew-invitations/{inviteCode}/accept`를 호출한다.
 7. 성공하면 근무자는 해당 사업장 크루로 즉시 승인된다.
 
-### 11.4 토큰 재발급
+### 13.4 토큰 재발급
 
 1. access token 만료 또는 인증 실패 감지
 2. 저장된 refresh token과 deviceId로 `POST /api/auth/token/refresh` 호출
 3. 성공 시 access token과 refresh token을 모두 교체 저장
 4. 실패 시 로컬 토큰 삭제 후 로그인 화면으로 이동
 
-### 11.5 로그아웃
+### 13.5 로그아웃
 
 1. 저장된 refresh token과 deviceId로 `POST /api/auth/logout` 호출
 2. 성공 또는 실패와 관계없이 클라이언트 로컬 토큰 삭제 권장
 3. 서버는 일치하는 Redis refresh token 세션만 삭제
 
-## 12. 현재 구현 참고사항
+## 14. 현재 구현 참고사항
 
 - 민감 정보와 배포 환경 정보는 API 명세에 기록하지 않는다.
 - 배포 관련 설정은 별도 보안 채널에서 관리한다.
@@ -1542,3 +1854,6 @@ idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, noti
 - 사장님 회원가입은 최초 사업장과 사장님 crew 소속을 함께 생성한다.
 - 근무자는 회원가입만으로 기본 기능 사용이 가능하며, 사업장 소속은 크루 초대 수락 흐름에서 처리한다.
 - 크루 초대 코드는 Redis TTL을 사용하지만, 최종 상태와 감사 이력은 RDB `crew_invitation`에 기록한다.
+- FCM 토큰은 기기별로 저장하며, 물리 삭제하지 않고 `INACTIVE`로 비활성화한다.
+- 앱 내 알림은 FCM 발송 성공 여부와 무관하게 `notification`에 저장한다.
+- FCM 발송 이력은 `notification_delivery`에 저장하며, `fcm_token_id`는 FK 없는 스냅샷 컬럼이다.
