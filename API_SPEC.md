@@ -15,6 +15,8 @@
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
+- 사업장 공지사항 작성/조회/수정/삭제
+- 사업장 공지사항 댓글 작성/조회/수정/삭제
 
 모든 API URL은 `/api/*` 규칙을 따른다. `/api/v1/*` 형식은 사용하지 않는다.
 
@@ -911,9 +913,462 @@ Authorization: Bearer {OWNER_ACCESS_TOKEN}
 | 403 | 4003 | OWNER 권한이 아님 |
 | 404 | 4004 | 조회할 수 있는 사업장을 찾을 수 없음 |
 
-## 8. 크루 초대 DB 정책
+## 8. 공지사항 API
 
-### 8.1 crew_invitation
+공지사항은 사업장 단위 게시글이다. 사장님은 본인 소유 사업장의 공지를 작성, 수정, 삭제할 수 있고 근무자는 본인이 소속된 사업장의 공지만 조회할 수 있다.
+
+### 8.1 사업장 공지 작성
+
+```http
+POST /api/work-places/{workPlaceId}/notices
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 공지를 작성할 사업장 ID |
+
+#### 요청 본문
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| title | string | Y | 공지 제목. 1~100자 |
+| content | string | Y | 공지 내용. 1~5000자 |
+| representative | boolean | Y | 대표 공지 여부 |
+
+#### 요청 예시
+
+```json
+{
+  "title": "오늘 마감 쓰레기 버리는 거 잊지마세요",
+  "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
+  "representative": true
+}
+```
+
+#### 성공 응답
+
+```http
+201 Created
+```
+
+```json
+{
+  "noticeId": 1,
+  "workPlaceId": 1,
+  "writerMemberId": 1,
+  "writerMemberName": "정진섭",
+  "title": "오늘 마감 쓰레기 버리는 거 잊지마세요",
+  "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
+  "representative": true,
+  "status": "ACTIVE",
+  "createdAt": "2026-06-14T03:00:00",
+  "updatedAt": "2026-06-14T03:00:00"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 작성할 수 있다.
+- 사장님 본인이 소유한 활성 사업장에만 작성할 수 있다.
+- 대표 공지는 사업장당 최대 1개다.
+- 새 공지를 대표 공지로 작성하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
+
+### 8.2 사업장 공지 목록 조회
+
+```http
+GET /api/work-places/{workPlaceId}/notices?page=0&size=20
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER, WORKER
+```
+
+#### Query Parameter
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| page | number | N | 0 | 페이지 번호. 0 이상 |
+| size | number | N | 20 | 페이지 크기. 1~100 |
+
+#### 성공 응답
+
+```json
+{
+  "content": [
+    {
+      "noticeId": 1,
+      "workPlaceId": 1,
+      "writerMemberId": 1,
+      "writerMemberName": "정진섭",
+      "title": "오늘 마감 쓰레기 버리는 거 잊지마세요",
+      "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
+      "representative": true,
+      "status": "ACTIVE",
+      "createdAt": "2026-06-14T03:00:00",
+      "updatedAt": "2026-06-14T03:00:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님은 본인 소유 사업장의 공지만 조회할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 공지만 조회할 수 있다.
+- 삭제된 공지는 목록에 포함하지 않는다.
+- 기본 정렬은 최신 작성순이다.
+
+### 8.3 사업장 대표 공지 조회
+
+```http
+GET /api/work-places/{workPlaceId}/notices/representative
+Authorization: Bearer {accessToken}
+```
+
+#### 성공 응답: 대표 공지가 있는 경우
+
+```json
+{
+  "notice": {
+    "noticeId": 1,
+    "workPlaceId": 1,
+    "writerMemberId": 1,
+    "writerMemberName": "정진섭",
+    "title": "대표 공지",
+    "content": "홈에서 노출할 대표 공지입니다.",
+    "representative": true,
+    "status": "ACTIVE",
+    "createdAt": "2026-06-14T03:00:00",
+    "updatedAt": "2026-06-14T03:00:00"
+  }
+}
+```
+
+#### 성공 응답: 대표 공지가 없는 경우
+
+```json
+{
+  "notice": null
+}
+```
+
+### 8.4 공지 단건 조회
+
+```http
+GET /api/notices/{noticeId}
+Authorization: Bearer {accessToken}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님은 본인 소유 사업장의 공지만 조회할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 공지만 조회할 수 있다.
+- 삭제된 공지는 조회할 수 없다.
+
+응답 형식은 `8.1 사업장 공지 작성` 성공 응답과 동일하다.
+
+### 8.5 홈 대표 공지 조회
+
+홈 화면에서 대표 공지만 가볍게 노출하기 위한 전용 API다. 기존 대표 공지 조회 API보다 응답 필드가 작다.
+
+```http
+GET /api/home/work-places/{workPlaceId}/representative-notice
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER, WORKER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 홈 대표 공지를 조회할 사업장 ID |
+
+#### 성공 응답: 대표 공지가 있는 경우
+
+```json
+{
+  "notice": {
+    "noticeId": 1,
+    "title": "오늘 마감 쓰레기 버리는 거 잊지마세요",
+    "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
+    "writerMemberName": "정진섭",
+    "createdAt": "2026-06-14T03:00:00"
+  }
+}
+```
+
+#### 성공 응답: 대표 공지가 없는 경우
+
+```json
+{
+  "notice": null
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님은 본인 소유 사업장의 홈 대표 공지만 조회할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 홈 대표 공지만 조회할 수 있다.
+- 대표 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
+- 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
+
+### 8.6 홈 최신 공지 조회
+
+홈 화면에서 가장 최근 작성된 공지 1건을 가볍게 노출하기 위한 전용 API다. 대표 공지 여부와 무관하게 활성 공지 중 최신 1건을 반환한다.
+
+```http
+GET /api/home/work-places/{workPlaceId}/latest-notice
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER, WORKER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 홈 최신 공지를 조회할 사업장 ID |
+
+#### 성공 응답: 최신 공지가 있는 경우
+
+```json
+{
+  "notice": {
+    "noticeId": 10,
+    "title": "최신 공지",
+    "content": "가장 최근 작성된 공지입니다.",
+    "writerMemberName": "정진섭",
+    "createdAt": "2026-06-14T03:10:00"
+  }
+}
+```
+
+#### 성공 응답: 최신 공지가 없는 경우
+
+```json
+{
+  "notice": null
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님은 본인 소유 사업장의 홈 최신 공지만 조회할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 홈 최신 공지만 조회할 수 있다.
+- 정렬 기준은 `createdAt DESC`, `noticeId DESC`다.
+- 대표 공지가 가장 최근 작성된 공지라면 대표 공지 API와 최신 공지 API가 같은 공지를 반환할 수 있다.
+- 최신 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
+- 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
+
+### 8.7 공지 수정
+
+```http
+PATCH /api/notices/{noticeId}
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+요청 본문과 응답 형식은 `8.1 사업장 공지 작성`과 동일하다.
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 수정할 수 있다.
+- 사장님 본인이 소유한 사업장의 공지만 수정할 수 있다.
+- 수정으로 대표 공지를 지정하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
+
+### 8.8 공지 삭제
+
+```http
+DELETE /api/notices/{noticeId}
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 삭제할 수 있다.
+- 사장님 본인이 소유한 사업장의 공지만 삭제할 수 있다.
+- 삭제는 물리 삭제가 아니라 `DELETED` 상태와 `deleted_at`으로 처리한다.
+- 대표 공지를 삭제하면 해당 사업장은 대표 공지가 없는 상태가 된다.
+
+### 8.9 공지 댓글 작성
+
+```http
+POST /api/notices/{noticeId}/comments
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### 요청 본문
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| content | string | Y | 댓글 내용. 1~500자 |
+
+#### 요청 예시
+
+```json
+{
+  "content": "확인 부탁드립니다."
+}
+```
+
+#### 성공 응답
+
+```http
+201 Created
+```
+
+```json
+{
+  "commentId": 1,
+  "noticeId": 1,
+  "writerMemberId": 1,
+  "writerMemberName": "정진섭",
+  "content": "확인 부탁드립니다.",
+  "status": "ACTIVE",
+  "createdAt": "2026-06-14T03:00:00",
+  "updatedAt": "2026-06-14T03:00:00"
+}
+```
+
+### 8.10 공지 댓글 조회
+
+```http
+GET /api/notices/{noticeId}/comments?cursorId=10&size=20
+Authorization: Bearer {accessToken}
+```
+
+#### Query Parameter
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| cursorId | number | N | null | 마지막으로 조회한 댓글 ID. 전달하면 해당 ID보다 큰 댓글부터 조회 |
+| size | number | N | 20 | 조회 개수. 1~100 |
+
+#### 성공 응답
+
+```json
+{
+  "content": [
+    {
+      "commentId": 11,
+      "noticeId": 1,
+      "writerMemberId": 1,
+      "writerMemberName": "정진섭",
+      "content": "확인 부탁드립니다.",
+      "status": "ACTIVE",
+      "createdAt": "2026-06-14T03:00:00",
+      "updatedAt": "2026-06-14T03:00:00"
+    }
+  ],
+  "nextCursorId": 11,
+  "hasNext": true
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 댓글은 `notice_comment_id` 오름차순으로 조회한다.
+- 다음 페이지가 없으면 `nextCursorId`는 null이고 `hasNext`는 false다.
+- 삭제된 댓글은 조회하지 않는다.
+
+### 8.11 공지 댓글 수정
+
+```http
+PATCH /api/notices/{noticeId}/comments/{commentId}
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+요청 본문과 응답 형식은 `8.9 공지 댓글 작성`과 동일하다.
+
+### 8.12 공지 댓글 삭제
+
+```http
+DELETE /api/notices/{noticeId}/comments/{commentId}
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+#### 공지사항 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 요청 본문, 페이지, 커서 검증 실패 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아니거나 사업장 공지 접근 권한 없음 |
+| 404 | 4004 | 사업장, 공지, 댓글을 찾을 수 없음 |
+
+## 9. 크루 초대 DB 정책
+
+### 9.1 crew_invitation
 
 `crew_invitation`은 초대 코드 발급과 사용 이력을 남기는 감사 테이블이다.
 
@@ -957,16 +1412,89 @@ idx_crew_invitation_invite_code_status (invite_code, status)
 idx_crew_invitation_expires_at_status (expires_at, status)
 ```
 
-## 9. 클라이언트 플로우
+## 10. 공지사항 DB 정책
 
-### 9.1 기존 회원 로그인
+### 10.1 notice
+
+`notice`는 사업장별 공지 게시글을 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notice_id | BIGINT | N | PK |
+| work_place_id | BIGINT | N | 사업장 ID, `work_place` FK |
+| writer_member_id | BIGINT | N | 공지 작성 회원 ID 스냅샷, FK 없음 |
+| title | VARCHAR(100) | N | 공지 제목 |
+| content | TEXT | N | 공지 내용 |
+| representative | TINYINT(1) | N | 대표 공지 여부 |
+| status | VARCHAR(20) | N | 공지 상태 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 삭제 시각 |
+
+#### 상태값
+
+```text
+ACTIVE
+DELETED
+```
+
+#### 제약조건
+
+- `work_place_id`는 `work_place.work_place_id`를 참조한다.
+- `writer_member_id`는 FK를 걸지 않는 비정규화 컬럼이다.
+- `representative`는 `0`, `1`만 허용한다.
+- 사업장당 대표 공지는 서비스 트랜잭션에서 최대 1개로 유지한다.
+
+#### 인덱스
+
+```text
+idx_notice_work_place_status_deleted_created_id (work_place_id, status, deleted_at, created_at DESC, notice_id DESC)
+idx_notice_work_place_representative_status_deleted (work_place_id, representative, status, deleted_at)
+```
+
+### 10.2 notice_comment
+
+`notice_comment`는 공지별 사장님 댓글을 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notice_comment_id | BIGINT | N | PK |
+| notice_id | BIGINT | N | 공지 ID, `notice` FK |
+| writer_member_id | BIGINT | N | 댓글 작성 회원 ID 스냅샷, FK 없음 |
+| content | VARCHAR(500) | N | 댓글 내용 |
+| status | VARCHAR(20) | N | 댓글 상태 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 삭제 시각 |
+
+#### 상태값
+
+```text
+ACTIVE
+DELETED
+```
+
+#### 제약조건
+
+- `notice_id`는 `notice.notice_id`를 참조한다.
+- `writer_member_id`는 FK를 걸지 않는 비정규화 컬럼이다.
+
+#### 인덱스
+
+```text
+idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, notice_comment_id)
+```
+
+## 11. 클라이언트 플로우
+
+### 11.1 기존 회원 로그인
 
 1. 앱에서 소셜 SDK 로그인 수행
 2. Google은 `idToken`, Kakao는 `accessToken`, Apple은 `idToken + authorizationCode` 획득
 3. `POST /api/auth/social-login` 호출
 4. `LOGIN_SUCCESS`이면 토큰 저장 후 홈 진입
 
-### 9.2 신규 회원가입
+### 11.2 신규 회원가입
 
 1. 앱에서 소셜 SDK 로그인 수행
 2. `POST /api/auth/social-login` 호출
@@ -978,7 +1506,7 @@ idx_crew_invitation_expires_at_status (expires_at, status)
 
 주의: 회원가입 API 호출 시 소셜 인증 정보를 다시 전달해야 한다.
 
-### 9.3 크루 초대
+### 11.3 크루 초대
 
 1. 사장님이 사업장 화면에서 초대 링크 생성을 요청한다.
 2. 앱은 `POST /api/work-places/{workPlaceId}/crew-invitations`를 호출한다.
@@ -988,20 +1516,20 @@ idx_crew_invitation_expires_at_status (expires_at, status)
 6. 앱은 `POST /api/crew-invitations/{inviteCode}/accept`를 호출한다.
 7. 성공하면 근무자는 해당 사업장 크루로 즉시 승인된다.
 
-### 9.4 토큰 재발급
+### 11.4 토큰 재발급
 
 1. access token 만료 또는 인증 실패 감지
 2. 저장된 refresh token과 deviceId로 `POST /api/auth/token/refresh` 호출
 3. 성공 시 access token과 refresh token을 모두 교체 저장
 4. 실패 시 로컬 토큰 삭제 후 로그인 화면으로 이동
 
-### 9.5 로그아웃
+### 11.5 로그아웃
 
 1. 저장된 refresh token과 deviceId로 `POST /api/auth/logout` 호출
 2. 성공 또는 실패와 관계없이 클라이언트 로컬 토큰 삭제 권장
 3. 서버는 일치하는 Redis refresh token 세션만 삭제
 
-## 10. 현재 구현 참고사항
+## 12. 현재 구현 참고사항
 
 - 민감 정보와 배포 환경 정보는 API 명세에 기록하지 않는다.
 - 배포 관련 설정은 별도 보안 채널에서 관리한다.
