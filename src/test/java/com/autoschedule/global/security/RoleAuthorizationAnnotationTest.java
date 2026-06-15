@@ -77,6 +77,15 @@ class RoleAuthorizationAnnotationTest {
     }
 
     /**
+     * Swagger UI 기본 진입점은 인증 없이 접근할 수 있어야 한다.
+     */
+    @Test
+    void swaggerUiHtmlCanAccessWithoutAuthentication() throws Exception {
+        mockMvc.perform(get("/swagger-ui.html"))
+                .andExpect(status().is3xxRedirection());
+    }
+
+    /**
      * 테스트 권한에 맞는 access token을 발급한다.
      */
     private String bearerToken(MemberRole role) {
