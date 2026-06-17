@@ -2,6 +2,7 @@ package com.autoschedule.notice.service;
 
 import com.autoschedule.auth.jwt.JwtAuthenticationPrincipal;
 import com.autoschedule.crew.domain.CrewJoinStatus;
+import com.autoschedule.crew.domain.CrewRole;
 import com.autoschedule.crew.domain.CrewStatus;
 import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
@@ -26,6 +27,10 @@ import com.autoschedule.notice.dto.NoticeUpdateRequest;
 import com.autoschedule.notice.dto.RepresentativeNoticeResponse;
 import com.autoschedule.notice.repository.NoticeCommentRepository;
 import com.autoschedule.notice.repository.NoticeRepository;
+import com.autoschedule.notification.domain.NotificationType;
+import com.autoschedule.notification.domain.PushPolicy;
+import com.autoschedule.notification.dto.NotificationSendCommand;
+import com.autoschedule.notification.service.NotificationCommandService;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
@@ -55,6 +60,7 @@ public class NoticeService {
     private final CrewRepository crewRepository;
     private final NoticeRepository noticeRepository;
     private final NoticeCommentRepository noticeCommentRepository;
+    private final NotificationCommandService notificationCommandService;
 
     /**
      * 사장님이 소유한 사업장에 새 공지를 작성한다.
@@ -72,8 +78,37 @@ public class NoticeService {
                 request.representative()
         ));
         applyRepresentativePolicy(notice);
+        sendNoticeCreatedNotifications(workPlace, notice);
 
         return NoticeResponse.from(notice, owner.getName());
+    }
+
+    /**
+     * 공지가 작성된 사업장의 승인된 근무자들에게 앱 알림과 FCM 푸시를 요청한다.
+     */
+    private void sendNoticeCreatedNotifications(WorkPlace workPlace, Notice notice) {
+        List<Long> workerMemberIds = crewRepository.findMemberIdsByWorkPlaceAndRole(
+                workPlace.getId(),
+                CrewJoinStatus.APPROVED,
+                CrewRole.WORKER,
+                CrewStatus.ACTIVE
+        );
+        for (Long workerMemberId : workerMemberIds) {
+            notificationCommandService.sendToMember(
+                    workerMemberId,
+                    new NotificationSendCommand(
+                            NotificationType.NOTICE,
+                            PushPolicy.PUSH,
+                            "새 공지가 등록됐어요",
+                            notice.getTitle(),
+                            Map.of(
+                                    "type", NotificationType.NOTICE.name(),
+                                    "workPlaceId", String.valueOf(workPlace.getId()),
+                                    "noticeId", String.valueOf(notice.getId())
+                            )
+                    )
+            );
+        }
     }
 
     /**

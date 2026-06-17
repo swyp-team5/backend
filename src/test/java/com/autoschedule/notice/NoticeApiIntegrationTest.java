@@ -1,6 +1,9 @@
 package com.autoschedule.notice;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -15,6 +18,7 @@ import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberRole;
 import com.autoschedule.member.domain.SocialProvider;
 import com.autoschedule.member.repository.MemberRepository;
+import com.autoschedule.notification.service.FcmDeliveryProcessor;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
@@ -30,6 +34,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -67,6 +72,9 @@ class NoticeApiIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @MockitoBean
+    private FcmDeliveryProcessor fcmDeliveryProcessor;
 
     private Member owner;
     private Member worker;
@@ -490,6 +498,60 @@ class NoticeApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value("4004"));
     }
 
+    /**
+     * 사장님이 공지를 작성하면 승인된 근무자에게 앱 알림과 FCM 발송 대기 이력을 생성한다.
+     */
+    @Test
+    void ownerCreatesNoticeAndPushNotificationIsPreparedForApprovedWorkers() throws Exception {
+        registerFcmToken(worker, "worker-device", "worker-fcm-token");
+        registerFcmToken(outsiderWorker, "outsider-device", "outsider-fcm-token");
+
+        JsonNode notice = createNotice(owner, workPlace.getId(), "새 공지", "확인해주세요.", false);
+
+        Integer workerNotificationCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                          from notification
+                         where receiver_member_id = ?
+                           and notification_type = 'NOTICE'
+                           and push_policy = 'PUSH'
+                           and title = '새 공지가 등록됐어요'
+                        """,
+                Integer.class,
+                worker.getId()
+        );
+        Integer ownerNotificationCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification where receiver_member_id = ?",
+                Integer.class,
+                owner.getId()
+        );
+        Integer outsiderNotificationCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification where receiver_member_id = ?",
+                Integer.class,
+                outsiderWorker.getId()
+        );
+        Integer pendingDeliveryCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                          from notification_delivery delivery
+                          join notification notification
+                            on notification.notification_id = delivery.notification_id
+                         where notification.receiver_member_id = ?
+                           and delivery.status = 'PENDING'
+                           and notification.data ->> '$.noticeId' = ?
+                        """,
+                Integer.class,
+                worker.getId(),
+                notice.get("noticeId").asText()
+        );
+
+        assertThat(workerNotificationCount).isEqualTo(1);
+        assertThat(ownerNotificationCount).isZero();
+        assertThat(outsiderNotificationCount).isZero();
+        assertThat(pendingDeliveryCount).isEqualTo(1);
+        verify(fcmDeliveryProcessor, timeout(1000)).process(any());
+    }
+
     private JsonNode createNotice(
             Member requester,
             Long workPlaceId,
@@ -538,12 +600,29 @@ class NoticeApiIntegrationTest {
                 """.formatted(content);
     }
 
+    private void registerFcmToken(Member member, String deviceId, String token) {
+        jdbcTemplate.update(
+                """
+                        insert into fcm_token
+                            (member_id, device_id, token, platform, app_version, status, last_registered_at, created_at, updated_at, deleted_at)
+                        values
+                            (?, ?, ?, 'ANDROID', '1.0.0', 'ACTIVE', now(), now(), now(), null)
+                        """,
+                member.getId(),
+                deviceId,
+                token
+        );
+    }
+
     private String bearer(Member member) {
         return "Bearer " + jwtTokenProvider.issue(member).accessToken();
     }
 
     private void cleanupDatabase() {
         jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
+        deleteTableIfExists("notification_delivery");
+        deleteTableIfExists("notification");
+        deleteTableIfExists("fcm_token");
         deleteTableIfExists("notice_comment");
         deleteTableIfExists("notice");
         jdbcTemplate.update("DELETE FROM crew_invitation");
