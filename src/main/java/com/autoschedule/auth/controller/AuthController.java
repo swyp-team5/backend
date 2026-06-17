@@ -9,10 +9,10 @@ import com.autoschedule.auth.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -29,40 +29,42 @@ public class AuthController {
      * 소셜 인증 정보를 검증하고 기존 회원이면 로그인, 신규 사용자이면 회원가입 필요 상태를 반환한다.
      */
     @PostMapping("/social-login")
-    public ResponseEntity<AuthResponse> socialLogin(@Valid @RequestBody SocialLoginRequest request) {
-        return ResponseEntity.ok(authService.socialLogin(request));
+    public AuthResponse socialLogin(@Valid @RequestBody SocialLoginRequest request) {
+        return authService.socialLogin(request);
     }
 
     /**
      * 사장님 회원가입을 완료하고 즉시 로그인 토큰을 발급한다.
      */
+    @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/signup/owner")
-    public ResponseEntity<AuthResponse> signupOwner(@Valid @RequestBody OwnerSignupRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.signupOwner(request));
+    public AuthResponse signupOwner(@Valid @RequestBody OwnerSignupRequest request) {
+        return authService.signupOwner(request);
     }
 
     /**
      * 근무자 회원가입을 완료하고 즉시 로그인 토큰을 발급한다.
      */
+    @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/signup/worker")
-    public ResponseEntity<AuthResponse> signupWorker(@Valid @RequestBody WorkerSignupRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.signupWorker(request));
+    public AuthResponse signupWorker(@Valid @RequestBody WorkerSignupRequest request) {
+        return authService.signupWorker(request);
     }
 
     /**
      * 기기별 refresh token을 검증하고 새 access token과 refresh token을 발급한다.
      */
     @PostMapping("/token/refresh")
-    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
-        return ResponseEntity.ok(authService.refresh(request));
+    public AuthResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return authService.refresh(request);
     }
 
     /**
      * 현재 기기의 refresh token 세션을 삭제해 로그아웃 처리한다.
      */
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
+    public void logout(@Valid @RequestBody RefreshTokenRequest request) {
         authService.logout(request);
-        return ResponseEntity.noContent().build();
     }
 }
