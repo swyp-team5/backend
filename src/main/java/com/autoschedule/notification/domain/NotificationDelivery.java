@@ -65,9 +65,9 @@ public class NotificationDelivery extends BaseEntity {
     private LocalDateTime deletedAt;
 
     /**
-     * FCM 토큰에 대한 발송 시도 이력을 생성한다.
+     * FCM 토큰에 대한 발송 대기 이력을 생성한다.
      */
-    public static NotificationDelivery createFcmAttempt(
+    public static NotificationDelivery createFcmPending(
             Notification notification,
             Long fcmTokenId,
             LocalDateTime attemptedAt
@@ -77,8 +77,15 @@ public class NotificationDelivery extends BaseEntity {
         delivery.fcmTokenId = fcmTokenId;
         delivery.channel = NotificationDeliveryChannel.FCM;
         delivery.attemptedAt = attemptedAt;
-        delivery.status = NotificationDeliveryStatus.FAILED;
+        delivery.status = NotificationDeliveryStatus.PENDING;
         return delivery;
+    }
+
+    /**
+     * FCM 발송을 시도한 시각을 기록한다.
+     */
+    public void markAttempted(LocalDateTime attemptedAt) {
+        this.attemptedAt = attemptedAt;
     }
 
     /**
