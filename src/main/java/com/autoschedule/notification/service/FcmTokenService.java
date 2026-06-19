@@ -6,6 +6,7 @@ import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notification.domain.FcmToken;
+import com.autoschedule.notification.domain.FcmTokenStatus;
 import com.autoschedule.notification.dto.FcmTokenRegisterRequest;
 import com.autoschedule.notification.dto.FcmTokenResponse;
 import com.autoschedule.notification.repository.FcmTokenRepository;
@@ -59,6 +60,16 @@ public class FcmTokenService {
     public void deactivate(Long memberId, String deviceId) {
         fcmTokenRepository.findByMember_IdAndDeviceId(memberId, deviceId)
                 .ifPresent(fcmToken -> fcmToken.deactivate(LocalDateTime.now()));
+    }
+
+    /**
+     * 회원탈퇴 시 회원의 모든 활성 FCM 토큰을 비활성화한다.
+     */
+    @Transactional
+    public void deactivateAll(Long memberId) {
+        LocalDateTime now = LocalDateTime.now();
+        fcmTokenRepository.findByMember_IdAndStatus(memberId, FcmTokenStatus.ACTIVE)
+                .forEach(fcmToken -> fcmToken.deactivate(now));
     }
 
     /**

@@ -34,6 +34,7 @@ import com.autoschedule.terms.service.SignupTermsPolicy;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,6 +53,8 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final Duration WITHDRAWAL_GRACE_PERIOD = Duration.ofDays(30);
 
     private final SocialAuthProviderRegistry socialAuthProviderRegistry;
     private final MemberRepository memberRepository;
@@ -80,7 +83,7 @@ public class AuthService {
                         socialUserInfo.provider(),
                         socialUserInfo.subject()
                 )
-                .map(member -> issueLoginResponse(member, request.device()))
+                .map(member -> loginExistingMember(member, request.device()))
                 .orElseGet(AuthResponse::signupRequired);
     }
 
@@ -184,6 +187,33 @@ public class AuthService {
                 .filter(savedMember -> savedMember.getStatus() == MemberStatus.ACTIVE)
                 .orElseThrow(this::invalidRefreshToken);
         refreshTokenStore.delete(memberId, request.deviceId());
+    }
+
+    /**
+     * 기존 회원의 로그인 가능 상태를 확인한 뒤 JWT와 refresh token을 발급한다.
+     */
+    private AuthResponse loginExistingMember(Member member, DeviceRequest device) {
+        validateLoginAllowed(member);
+        return issueLoginResponse(member, device);
+    }
+
+    /**
+     * 정상 회원과 30일 유예 기간 안의 탈퇴 신청 회원만 로그인을 허용한다.
+     */
+    private void validateLoginAllowed(Member member) {
+        if (member.getStatus() == MemberStatus.ACTIVE) {
+            return;
+        }
+
+        if (member.isWithinWithdrawalGracePeriod(LocalDateTime.now(), WITHDRAWAL_GRACE_PERIOD)) {
+            return;
+        }
+
+        if (member.getStatus() == MemberStatus.WITHDRAWAL_PENDING) {
+            throw new ApiException(ErrorCode.CONFLICT, "탈퇴 취소 가능 기간이 지나 로그인할 수 없습니다.");
+        }
+
+        throw new ApiException(ErrorCode.CONFLICT, "탈퇴 완료된 회원은 로그인할 수 없습니다.");
     }
 
     /**

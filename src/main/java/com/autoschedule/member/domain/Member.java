@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -75,6 +76,47 @@ public class Member extends BaseEntity {
         member.role = role;
         member.status = MemberStatus.ACTIVE;
         return member;
+    }
+
+    /**
+     * 회원탈퇴를 신청해 30일 유예 상태로 전환하고 최초 신청 시각을 저장한다.
+     */
+    public void requestWithdrawal(LocalDateTime requestedAt) {
+        if (status == MemberStatus.WITHDRAWAL_PENDING) {
+            return;
+        }
+
+        status = MemberStatus.WITHDRAWAL_PENDING;
+        deletedAt = requestedAt;
+    }
+
+    /**
+     * 회원탈퇴 유예 상태를 취소하고 정상 회원 상태로 복구한다.
+     */
+    public void cancelWithdrawal() {
+        if (status == MemberStatus.ACTIVE) {
+            return;
+        }
+
+        status = MemberStatus.ACTIVE;
+        deletedAt = null;
+    }
+
+    /**
+     * 현재 회원이 탈퇴 유예 상태인지 확인한다.
+     */
+    public boolean isWithdrawalPending() {
+        return status == MemberStatus.WITHDRAWAL_PENDING;
+    }
+
+    /**
+     * 탈퇴 신청 시각 기준으로 사용자가 직접 탈퇴를 취소할 수 있는 기간인지 확인한다.
+     */
+    public boolean isWithinWithdrawalGracePeriod(LocalDateTime now, Duration gracePeriod) {
+        if (!isWithdrawalPending() || deletedAt == null) {
+            return false;
+        }
+        return !deletedAt.plus(gracePeriod).isBefore(now);
     }
 
 }

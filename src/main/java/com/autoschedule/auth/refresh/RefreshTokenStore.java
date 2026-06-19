@@ -21,4 +21,9 @@ public interface RefreshTokenStore {
      * 회원과 기기 단위 refresh token 세션을 제거한다.
      */
     void delete(Long memberId, String deviceId);
+
+    /**
+     * 회원의 모든 기기 refresh token 세션을 제거한다.
+     */
+    void deleteAll(Long memberId);
 }

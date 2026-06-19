@@ -1,7 +1,11 @@
 package com.autoschedule.auth.refresh;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +46,26 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     @Override
     public void delete(Long memberId, String deviceId) {
         redisTemplate.delete(key(memberId, deviceId));
+    }
+
+    /**
+     * 회원의 모든 기기 refresh token 세션을 Redis key 패턴으로 찾아 제거한다.
+     */
+    @Override
+    public void deleteAll(Long memberId) {
+        List<String> keys = new ArrayList<>();
+        ScanOptions scanOptions = ScanOptions.scanOptions()
+                .match(KEY_PREFIX + ":" + memberId + ":*")
+                .count(1000)
+                .build();
+
+        try (Cursor<String> cursor = redisTemplate.scan(scanOptions)) {
+            cursor.forEachRemaining(keys::add);
+        }
+
+        if (!keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
     }
 
     /**

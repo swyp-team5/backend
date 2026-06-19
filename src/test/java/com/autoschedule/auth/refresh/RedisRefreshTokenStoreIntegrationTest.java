@@ -93,6 +93,22 @@ class RedisRefreshTokenStoreIntegrationTest {
     }
 
     /**
+     * 회원 전체 세션 삭제 시 요청 회원의 모든 기기만 제거하고 다른 회원 세션은 유지한다.
+     */
+    @Test
+    void deleteAllRemovesOnlyRequestedMemberSessions() {
+        refreshTokenStore.save(new RefreshTokenSession(1L, "iphone", "iphone-hash", Duration.ofMinutes(30)));
+        refreshTokenStore.save(new RefreshTokenSession(1L, "ipad", "ipad-hash", Duration.ofMinutes(30)));
+        refreshTokenStore.save(new RefreshTokenSession(2L, "iphone", "other-hash", Duration.ofMinutes(30)));
+
+        refreshTokenStore.deleteAll(1L);
+
+        assertThat(refreshTokenStore.findTokenHash(1L, "iphone")).isEmpty();
+        assertThat(refreshTokenStore.findTokenHash(1L, "ipad")).isEmpty();
+        assertThat(refreshTokenStore.findTokenHash(2L, "iphone")).contains("other-hash");
+    }
+
+    /**
      * Redis 저장소 테스트에 필요한 최소 Spring 설정을 구성한다.
      */
     @TestConfiguration

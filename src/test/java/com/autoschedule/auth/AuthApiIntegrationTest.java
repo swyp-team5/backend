@@ -12,6 +12,8 @@ import com.autoschedule.auth.social.SocialAuthCommand;
 import com.autoschedule.auth.social.SocialAuthProvider;
 import com.autoschedule.auth.social.SocialAuthProviderRegistry;
 import com.autoschedule.auth.social.SocialUserInfo;
+import com.autoschedule.member.domain.Member;
+import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.domain.SocialProvider;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.terms.domain.Terms;
@@ -21,6 +23,7 @@ import com.autoschedule.terms.repository.TermsRepository;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -400,6 +403,64 @@ class AuthApiIntegrationTest {
     }
 
     /**
+     * 탈퇴 유예 기간 내 회원은 로그인할 수 있지만 로그인만으로 탈퇴가 자동 취소되지는 않는다.
+     */
+    @Test
+    void socialLoginAllowsWithdrawalPendingMemberWithinGracePeriodWithoutAutoCancel() throws Exception {
+        JsonNode signupResponse = signupWorkerAndReadResponse("withdrawal-login-device");
+        Long memberId = signupResponse.get("member").get("memberId").asLong();
+        markWithdrawalPending(memberId, LocalDateTime.now().minusDays(5));
+
+        mockMvc.perform(post("/api/auth/social-login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "provider": "GOOGLE",
+                                  "idToken": "google-id-token",
+                                  "device": {
+                                    "deviceId": "withdrawal-login-device-2",
+                                    "platform": "ANDROID",
+                                    "appVersion": "1.0.0"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("LOGIN_SUCCESS"))
+                .andExpect(jsonPath("$.member.status").value("WITHDRAWAL_PENDING"))
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+        Member member = memberRepository.findById(memberId).orElseThrow();
+        assertThat(member.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
+        assertThat(member.getDeletedAt()).isNotNull();
+    }
+
+    /**
+     * 탈퇴 신청 후 30일이 지난 회원은 사용자 로그인으로 서비스를 다시 사용할 수 없다.
+     */
+    @Test
+    void socialLoginRejectsWithdrawalPendingMemberAfterGracePeriod() throws Exception {
+        JsonNode signupResponse = signupWorkerAndReadResponse("withdrawal-expired-device");
+        Long memberId = signupResponse.get("member").get("memberId").asLong();
+        markWithdrawalPending(memberId, LocalDateTime.now().minusDays(31));
+
+        mockMvc.perform(post("/api/auth/social-login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "provider": "GOOGLE",
+                                  "idToken": "google-id-token",
+                                  "device": {
+                                    "deviceId": "withdrawal-expired-device-2",
+                                    "platform": "ANDROID",
+                                    "appVersion": "1.0.0"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("4005"));
+    }
+
+    /**
      * 외부 네트워크 호출 없이 소셜 인증 성공 결과를 반환하는 테스트용 전략이다.
      */
     /**
@@ -572,6 +633,17 @@ class AuthApiIntegrationTest {
                 Integer.class
         );
         return count != null && count > 0;
+    }
+
+    /**
+     * 테스트 회원을 탈퇴 유예 상태로 직접 준비한다.
+     */
+    private void markWithdrawalPending(Long memberId, LocalDateTime deletedAt) {
+        jdbcTemplate.update(
+                "update member set status = 'WITHDRAWAL_PENDING', deleted_at = ? where member_id = ?",
+                deletedAt,
+                memberId
+        );
     }
 
     /**
