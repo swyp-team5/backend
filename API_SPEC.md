@@ -12,6 +12,8 @@
 - 근무자 회원가입
 - Access Token / Refresh Token 재발급
 - 로그아웃
+- 회원탈퇴 신청
+- 회원탈퇴 취소
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
@@ -77,6 +79,9 @@ WITHDRAWN
 ```
 
 현재 회원가입 직후 상태는 `ACTIVE`이다.
+
+- `WITHDRAWAL_PENDING`: 회원탈퇴 신청 후 30일 유예 상태. 유예 기간 안에는 로그인 후 탈퇴 취소 API로 복구할 수 있다.
+- `WITHDRAWN`: 영구 탈퇴 완료 상태. 현재 개인정보 영구 삭제 배치는 미구현이며 추후 관리자 기능에서 처리한다.
 
 ### 2.8 매장 규모
 
@@ -366,6 +371,10 @@ POST /api/auth/social-login
 
 로그인 성공 응답 형식을 반환한다.
 
+- 기존 회원 상태가 `ACTIVE`이면 정상 로그인 처리한다.
+- 기존 회원 상태가 `WITHDRAWAL_PENDING`이고 탈퇴 신청 후 30일 이내이면 로그인은 허용하되 상태를 자동 복구하지 않는다.
+- 기존 회원 상태가 `WITHDRAWAL_PENDING`이고 30일이 지났으면 로그인할 수 없다.
+
 #### 성공 응답: 신규 소셜 사용자
 
 ```http
@@ -385,6 +394,7 @@ POST /api/auth/social-login
 | 400 | 4000 | `provider`, `device` 등 필수 필드 누락 |
 | 400 | 4001 | provider별 필수 토큰 누락 |
 | 401 | 4002 | 소셜 토큰 검증 실패 |
+| 409 | 4005 | 탈퇴 취소 가능 기간이 지난 회원 또는 영구 탈퇴 완료 회원 |
 | 500 | 500 | 소셜 로그인 설정 누락 |
 
 ### 6.2 사장님 회원가입
@@ -657,6 +667,81 @@ POST /api/auth/logout
 | ---: | --- | --- |
 | 400 | 4000 | `refreshToken`, `deviceId` 누락 |
 | 401 | 4002 | refresh token 만료, 서명 오류, Redis 세션 없음, hash 불일치, 비활성 회원 |
+
+### 6.6 회원탈퇴 신청
+
+로그인한 회원 본인의 탈퇴를 신청한다. 탈퇴 신청 즉시 영구 삭제하지 않고 30일 유예 상태로 전환한다.
+
+```http
+DELETE /api/members/me
+```
+
+#### 인증
+
+```http
+Authorization: Bearer {ACCESS_TOKEN}
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+응답 본문은 없다.
+
+#### 주요 비즈니스 규칙
+
+- `ACTIVE` 회원은 `WITHDRAWAL_PENDING` 상태로 변경된다.
+- `member.deleted_at`에는 탈퇴 신청 시각을 저장한다.
+- 이미 `WITHDRAWAL_PENDING` 상태이면 멱등하게 성공하며 최초 `deleted_at`은 유지한다.
+- 회원의 모든 기기 refresh token 세션을 Redis에서 제거한다.
+- 회원의 모든 활성 FCM token은 `INACTIVE`로 비활성화한다.
+- 이미 발급된 access token은 stateless JWT 특성상 서버에서 물리 폐기하지 않는다. 클라이언트는 탈퇴 성공 즉시 로컬 토큰을 삭제해야 한다.
+- 30일 이후 개인정보 영구 삭제는 아직 수행하지 않는다. 추후 관리자 기능에서 물리 삭제로 구현한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 401 | 4002 | access token 누락, 만료, 서명 오류 |
+| 409 | 4005 | 이미 영구 탈퇴 완료된 회원 |
+
+### 6.7 회원탈퇴 취소
+
+30일 유예 기간 안에 로그인한 회원이 본인의 탈퇴 신청을 취소한다. 관리자 검토 없이 즉시 정상 상태로 복구한다.
+
+```http
+POST /api/members/me/withdrawal-cancel
+```
+
+#### 인증
+
+```http
+Authorization: Bearer {ACCESS_TOKEN}
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+응답 본문은 없다.
+
+#### 주요 비즈니스 규칙
+
+- `WITHDRAWAL_PENDING` 회원이 30일 유예 기간 안에 호출하면 `ACTIVE`로 복구된다.
+- 복구 시 `member.deleted_at`은 `null`로 초기화한다.
+- 이미 `ACTIVE` 상태이면 멱등하게 성공한다.
+- 유예 기간 내 로그인은 가능하지만 자동 복구하지 않는다. 클라이언트는 회원 상태가 `WITHDRAWAL_PENDING`이면 탈퇴 취소 화면으로 이동해야 한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 401 | 4002 | access token 누락, 만료, 서명 오류 |
+| 409 | 4005 | 탈퇴 취소 가능 기간 경과, 이미 영구 탈퇴 완료된 회원 |
 
 ## 7. 크루 초대 API
 
@@ -1531,7 +1616,53 @@ Authorization: Bearer {accessToken}
 - 본인의 미읽음 활성 알림만 읽음 처리한다.
 - 다른 회원의 알림에는 영향을 주지 않는다.
 
-### 9.6 내부 알림 발송 정책
+### 9.6 FCM 테스트 푸시 발송
+
+실제 비즈니스 이벤트와 무관하게 로그인한 회원 본인에게 FCM 앱 푸시를 발송해 로컬 수신 테스트를 진행한다.
+
+```http
+POST /api/notifications/test-push
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 요청 Body
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| title | string | Y | 테스트 푸시 제목. 100자 이하 |
+| body | string | Y | 테스트 푸시 본문. 500자 이하 |
+| data | object | N | FCM data payload. 최대 20개 |
+
+```json
+{
+  "title": "FCM 테스트",
+  "body": "테스트 푸시가 도착했어요.",
+  "data": {
+    "type": "FCM_TEST"
+  }
+}
+```
+
+#### 성공 응답
+
+```json
+{
+  "notificationId": 123
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- JWT 인증이 필요하다.
+- OWNER, WORKER 모두 호출할 수 있다.
+- 요청한 회원 본인에게만 발송한다.
+- 다른 회원 ID를 요청으로 받지 않는다.
+- `notification_type`은 `FCM_TEST`, `push_policy`는 `PUSH`로 저장한다.
+- 기존 알림 발송 파이프라인과 동일하게 `notification`, `notification_delivery`를 생성하고 커밋 이후 FCM 발송을 시도한다.
+- 활성 FCM 토큰이 없으면 앱 내 알림만 생성되고 FCM delivery는 생성되지 않는다.
+
+### 9.7 내부 알림 발송 정책
 
 도메인 기능은 공개 API가 아니라 내부 서비스 `NotificationCommandService.sendToMember(...)`를 호출해 알림을 생성한다.
 
@@ -1541,7 +1672,7 @@ Authorization: Bearer {accessToken}
 - Firebase 설정이 비활성화된 환경에서는 FCM 발송을 시도하지 않고 실패 delivery를 기록한다.
 - Firebase가 등록되지 않은 토큰이라고 응답하면 해당 `fcm_token`을 `INACTIVE`로 변경한다.
 
-### 9.7 알림 주요 에러
+### 9.8 알림 주요 에러
 
 | HTTP Status | Code | 상황 |
 | ---: | --- | --- |
@@ -1841,6 +1972,15 @@ Firebase Admin SDK는 Java 서버 SDK를 사용한다. 서버는 기본적으로
 2. 성공 또는 실패와 관계없이 클라이언트 로컬 토큰 삭제 권장
 3. 서버는 일치하는 Redis refresh token 세션만 삭제
 
+### 13.6 회원탈퇴와 탈퇴 취소
+
+1. 로그인한 사용자가 `DELETE /api/members/me` 호출
+2. 서버는 회원 상태를 `WITHDRAWAL_PENDING`으로 변경하고 refresh token, FCM token을 정리
+3. 이후 사용자가 30일 안에 다시 소셜 로그인하면 `LOGIN_SUCCESS`와 함께 `member.status = WITHDRAWAL_PENDING` 반환
+4. 앱은 일반 홈 진입 대신 탈퇴 취소 안내 화면으로 이동
+5. 사용자가 취소를 선택하면 `POST /api/members/me/withdrawal-cancel` 호출
+6. 성공하면 회원 상태가 `ACTIVE`로 복구되고 `deleted_at`은 `null`이 됨
+
 ## 14. 현재 구현 참고사항
 
 - 민감 정보와 배포 환경 정보는 API 명세에 기록하지 않는다.
@@ -1851,6 +1991,8 @@ Firebase Admin SDK는 Java 서버 SDK를 사용한다. 서버는 기본적으로
 - 소셜 이메일은 provider 응답에 없을 수 있으며, 없어도 회원가입을 허용한다.
 - refresh token은 RDB에 저장하지 않고 Redis에 hash로 저장한다.
 - refresh token은 `deviceId`별로 독립적으로 유지한다.
+- 회원탈퇴 신청 시 `member.deleted_at`은 탈퇴 신청 시각을 의미한다.
+- 회원탈퇴 신청 후 30일 이후 개인정보 영구 삭제는 아직 미구현이며 추후 관리자 기능에서 물리 삭제로 처리한다.
 - 사장님 회원가입은 최초 사업장과 사장님 crew 소속을 함께 생성한다.
 - 근무자는 회원가입만으로 기본 기능 사용이 가능하며, 사업장 소속은 크루 초대 수락 흐름에서 처리한다.
 - 크루 초대 코드는 Redis TTL을 사용하지만, 최종 상태와 감사 이력은 RDB `crew_invitation`에 기록한다.
