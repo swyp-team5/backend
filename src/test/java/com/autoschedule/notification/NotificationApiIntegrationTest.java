@@ -1,17 +1,26 @@
 package com.autoschedule.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.autoschedule.auth.domain.DevicePlatform;
 import com.autoschedule.auth.domain.TokenType;
 import com.autoschedule.auth.jwt.JwtTokenProvider;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberRole;
 import com.autoschedule.member.domain.SocialProvider;
 import com.autoschedule.member.repository.MemberRepository;
+import com.autoschedule.notification.domain.FcmToken;
+import com.autoschedule.notification.repository.FcmTokenRepository;
+import com.autoschedule.notification.service.FcmDeliveryProcessor;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +29,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -37,10 +48,16 @@ class NotificationApiIntegrationTest {
     private MemberRepository memberRepository;
 
     @Autowired
+    private FcmTokenRepository fcmTokenRepository;
+
+    @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @MockitoBean
+    private FcmDeliveryProcessor fcmDeliveryProcessor;
 
     private Member owner;
     private Member worker;
@@ -172,6 +189,87 @@ class NotificationApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("4004"));
+    }
+
+    /**
+     * 로그인 회원은 비즈니스 이벤트 없이 본인에게 FCM 테스트 푸시를 요청할 수 있다.
+     */
+    @Test
+    void memberSendsTestPushToSelf() throws Exception {
+        FcmToken fcmToken = fcmTokenRepository.save(FcmToken.create(
+                worker,
+                "worker-device",
+                "worker-fcm-token",
+                DevicePlatform.ANDROID,
+                "1.0.0",
+                LocalDateTime.now()
+        ));
+
+        mockMvc.perform(post("/api/notifications/test-push")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "FCM 테스트",
+                                  "body": "테스트 푸시가 도착했어요.",
+                                  "data": {
+                                    "type": "FCM_TEST"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notificationId").isNumber());
+
+        Long notificationId = jdbcTemplate.queryForObject(
+                """
+                        select notification_id
+                          from notification
+                         where receiver_member_id = ?
+                           and notification_type = 'FCM_TEST'
+                           and push_policy = 'PUSH'
+                           and title = 'FCM 테스트'
+                        """,
+                Long.class,
+                worker.getId()
+        );
+        Long deliveryId = jdbcTemplate.queryForObject(
+                """
+                        select notification_delivery_id
+                          from notification_delivery
+                         where notification_id = ?
+                           and fcm_token_id = ?
+                           and status = 'PENDING'
+                        """,
+                Long.class,
+                notificationId,
+                fcmToken.getId()
+        );
+
+        assertThat(notificationId).isNotNull();
+        assertThat(deliveryId).isNotNull();
+        verify(fcmDeliveryProcessor, timeout(1000))
+                .process(argThat(deliveryIds -> deliveryIds.contains(deliveryId)));
+    }
+
+    /**
+     * 테스트 푸시 요청 필드는 클라이언트가 활용할 수 있는 검증 메시지로 검증된다.
+     */
+    @Test
+    void testPushRequestValidationFails() throws Exception {
+        mockMvc.perform(post("/api/notifications/test-push")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "",
+                                  "body": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"))
+                .andExpect(jsonPath("$.errors.length()").value(2));
+
+        verify(fcmDeliveryProcessor, timeout(300).times(0)).process(any());
     }
 
     /**

@@ -4,6 +4,7 @@ package com.autoschedule.notification.domain;
  * 회원에게 전달되는 알림의 업무 유형을 정의한다.
  */
 public enum NotificationType {
+    FCM_TEST,
     NOTICE,
     SCHEDULE_CONFIRMED,
     SCHEDULE_UPDATED,
