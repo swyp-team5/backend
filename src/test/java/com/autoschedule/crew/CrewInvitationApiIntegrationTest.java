@@ -211,6 +211,38 @@ class CrewInvitationApiIntegrationTest {
     }
 
     /**
+     * 비활성 상태의 사업장은 소유자에게도 초대 생성 대상이 아닌 리소스로 응답한다.
+     */
+    @Test
+    void ownerCannotCreateInvitationForInactiveWorkPlace() throws Exception {
+        jdbcTemplate.update("update work_place set status = 'INACTIVE' where work_place_id = ?", workPlace.getId());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("4004"));
+    }
+
+    /**
+     * 삭제 시각이 기록된 사업장은 소유자에게도 초대 생성 대상이 아닌 리소스로 응답한다.
+     */
+    @Test
+    void ownerCannotCreateInvitationForDeletedWorkPlace() throws Exception {
+        jdbcTemplate.update(
+                "update work_place set deleted_at = ? where work_place_id = ?",
+                LocalDateTime.now(),
+                workPlace.getId()
+        );
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/crew-invitations", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("4004"));
+    }
+
+    /**
      * OWNER 권한 회원은 근무자 전용 초대 수락 API를 호출할 수 없다.
      */
     @Test
@@ -243,6 +275,41 @@ class CrewInvitationApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("4005"));
+    }
+
+    /**
+     * 과거 비활성 크루 이력은 현재 활성 소속이 아니므로 초대 수락을 막지 않는다.
+     */
+    @Test
+    void inactiveCrewHistoryDoesNotBlockInvitationAccept() throws Exception {
+        Crew inactiveCrew = crewRepository.save(Crew.createWorker(worker, workPlace));
+        jdbcTemplate.update(
+                "update crew set status = 'INACTIVE', deleted_at = ? where crew_id = ?",
+                LocalDateTime.now(),
+                inactiveCrew.getId()
+        );
+        JsonNode invitation = createInvitation(owner, workPlace.getId());
+
+        mockMvc.perform(post("/api/crew-invitations/{inviteCode}/accept", invitation.get("inviteCode").asText())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        Integer activeCrewCount = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*)
+                        FROM crew
+                        WHERE member_id = ?
+                          AND work_place_id = ?
+                          AND crew_role = 'WORKER'
+                          AND status = 'ACTIVE'
+                        """,
+                Integer.class,
+                worker.getId(),
+                workPlace.getId()
+        );
+        assertThat(activeCrewCount).isOne();
     }
 
     /**

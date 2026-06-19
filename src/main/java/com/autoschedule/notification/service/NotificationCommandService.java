@@ -3,7 +3,6 @@ package com.autoschedule.notification.service;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
-import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notification.domain.FcmToken;
 import com.autoschedule.notification.domain.FcmTokenStatus;
@@ -93,8 +92,7 @@ public class NotificationCommandService {
      * 인증 주체가 활성 회원인지 확인한다.
      */
     private Member findActiveMember(Long memberId) {
-        return memberRepository.findById(memberId)
-                .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
+        return memberRepository.findActiveById(memberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "알림 수신 회원을 찾을 수 없습니다."));
     }
 

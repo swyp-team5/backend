@@ -12,10 +12,8 @@ import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
-import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
-import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -162,7 +160,7 @@ public class CrewInvitationService {
      * 같은 근무자가 같은 사업장에 중복 가입하지 못하도록 검증한다.
      */
     private void validateNotAlreadyCrew(Member worker, WorkPlace workPlace) {
-        if (crewRepository.existsByMember_IdAndWorkPlace_Id(worker.getId(), workPlace.getId())) {
+        if (crewRepository.existsActiveByMemberIdAndWorkPlaceId(worker.getId(), workPlace.getId())) {
             throw new ApiException(ErrorCode.CONFLICT, "이미 해당 사업장 크루로 등록되어 있습니다.");
         }
     }
@@ -195,8 +193,7 @@ public class CrewInvitationService {
      * 활성 회원만 초대 생성과 수락을 수행할 수 있도록 조회한다.
      */
     private Member findActiveMember(Long memberId) {
-        return memberRepository.findById(memberId)
-                .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
+        return memberRepository.findActiveById(memberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
     }
 
@@ -204,8 +201,7 @@ public class CrewInvitationService {
      * 사장님이 소유한 활성 사업장을 조회하고 없으면 404 오류를 반환한다.
      */
     private WorkPlace findOwnedActiveWorkPlace(Long workPlaceId, Member owner) {
-        return workPlaceRepository.findByIdAndOwnerMemberId(workPlaceId, owner.getId())
-                .filter(savedWorkPlace -> savedWorkPlace.getStatus() == WorkPlaceStatus.ACTIVE)
+        return workPlaceRepository.findOwnedActiveById(workPlaceId, owner.getId())
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "초대할 수 있는 사업장을 찾을 수 없습니다."));
     }
 
@@ -223,7 +219,7 @@ public class CrewInvitationService {
             return Map.of();
         }
 
-        return memberRepository.findAllById(usedMemberIds)
+        return memberRepository.findActiveByIdIn(usedMemberIds)
                 .stream()
                 .collect(Collectors.toMap(Member::getId, Member::getName, (first, second) -> first));
     }

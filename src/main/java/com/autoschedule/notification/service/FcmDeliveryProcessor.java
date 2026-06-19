@@ -1,7 +1,6 @@
 package com.autoschedule.notification.service;
 
 import com.autoschedule.notification.domain.FcmToken;
-import com.autoschedule.notification.domain.FcmTokenStatus;
 import com.autoschedule.notification.domain.Notification;
 import com.autoschedule.notification.domain.NotificationDelivery;
 import com.autoschedule.notification.domain.NotificationDeliveryStatus;
@@ -92,8 +91,7 @@ public class FcmDeliveryProcessor {
             log.warn("FCM delivery에 토큰 ID가 없습니다. deliveryId={}", delivery.getId());
             return null;
         }
-        return fcmTokenRepository.findById(delivery.getFcmTokenId())
-                .filter(fcmToken -> fcmToken.getStatus() == FcmTokenStatus.ACTIVE)
+        return fcmTokenRepository.findActiveById(delivery.getFcmTokenId())
                 .orElseGet(() -> {
                     delivery.markFailure("FCM_TOKEN_NOT_ACTIVE", "활성 FCM 토큰을 찾을 수 없습니다.");
                     log.warn(

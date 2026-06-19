@@ -9,7 +9,6 @@ import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberRole;
-import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notice.domain.Notice;
 import com.autoschedule.notice.domain.NoticeComment;
@@ -32,7 +31,6 @@ import com.autoschedule.notification.domain.PushPolicy;
 import com.autoschedule.notification.dto.NotificationSendCommand;
 import com.autoschedule.notification.service.NotificationCommandService;
 import com.autoschedule.workplace.domain.WorkPlace;
-import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -330,8 +328,7 @@ public class NoticeService {
      * 인증 주체가 활성 회원인지 확인한다.
      */
     private Member findActiveMember(Long memberId) {
-        return memberRepository.findById(memberId)
-                .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
+        return memberRepository.findActiveById(memberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
     }
 
@@ -339,8 +336,7 @@ public class NoticeService {
      * 사장님이 소유한 활성 사업장을 조회한다.
      */
     private WorkPlace findOwnedActiveWorkPlace(Long workPlaceId, Long ownerMemberId) {
-        return workPlaceRepository.findByIdAndOwnerMemberId(workPlaceId, ownerMemberId)
-                .filter(workPlace -> workPlace.getStatus() == WorkPlaceStatus.ACTIVE)
+        return workPlaceRepository.findOwnedActiveById(workPlaceId, ownerMemberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "조회할 수 있는 사업장을 찾을 수 없습니다."));
     }
 
@@ -405,7 +401,7 @@ public class NoticeService {
                 .map(Notice::getWriterMemberId)
                 .distinct()
                 .toList();
-        return memberRepository.findAllById(writerMemberIds).stream()
+        return memberRepository.findActiveByIdIn(writerMemberIds).stream()
                 .collect(Collectors.toMap(Member::getId, Member::getName));
     }
 
@@ -417,7 +413,7 @@ public class NoticeService {
                 .map(NoticeComment::getWriterMemberId)
                 .distinct()
                 .toList();
-        return memberRepository.findAllById(writerMemberIds).stream()
+        return memberRepository.findActiveByIdIn(writerMemberIds).stream()
                 .collect(Collectors.toMap(Member::getId, Member::getName));
     }
 
@@ -425,7 +421,7 @@ public class NoticeService {
      * 단일 작성자 이름을 조회한다.
      */
     private String resolveWriterName(Long writerMemberId) {
-        return memberRepository.findById(writerMemberId)
+        return memberRepository.findActiveById(writerMemberId)
                 .map(Member::getName)
                 .orElse(null);
     }

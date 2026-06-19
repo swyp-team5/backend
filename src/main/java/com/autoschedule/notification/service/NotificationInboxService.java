@@ -3,7 +3,6 @@ package com.autoschedule.notification.service;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
-import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notification.domain.Notification;
 import com.autoschedule.notification.domain.NotificationStatus;
@@ -98,8 +97,7 @@ public class NotificationInboxService {
      * 인증 주체가 활성 회원인지 확인한다.
      */
     private Member findActiveMember(Long memberId) {
-        return memberRepository.findById(memberId)
-                .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
+        return memberRepository.findActiveById(memberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
     }
 

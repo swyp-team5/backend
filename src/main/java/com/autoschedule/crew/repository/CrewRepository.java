@@ -10,14 +10,21 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /**
- * 사업장 소속 정보의 저장과 조회를 담당한다.
+ * 사업장 크루 소속 정보의 저장과 조회를 담당한다.
  */
 public interface CrewRepository extends JpaRepository<Crew, Long> {
 
     /**
-     * 특정 회원이 이미 해당 사업장 크루로 등록되어 있는지 확인한다.
+     * 특정 회원이 특정 사업장에 특정 상태의 크루로 등록되어 있는지 확인한다.
      */
-    boolean existsByMember_IdAndWorkPlace_Id(Long memberId, Long workPlaceId);
+    boolean existsByMember_IdAndWorkPlace_IdAndStatus(Long memberId, Long workPlaceId, CrewStatus status);
+
+    /**
+     * 일반 사용자 API에서 사용할 활성 크루 소속 존재 여부 확인 메서드다.
+     */
+    default boolean existsActiveByMemberIdAndWorkPlaceId(Long memberId, Long workPlaceId) {
+        return existsByMember_IdAndWorkPlace_IdAndStatus(memberId, workPlaceId, CrewStatus.ACTIVE);
+    }
 
     /**
      * 특정 회원이 승인되고 활성화된 사업장 크루인지 확인한다.

@@ -128,6 +128,40 @@ class FcmTokenApiIntegrationTest {
     }
 
     /**
+     * 비활성화된 같은 기기 토큰을 다시 등록하면 기존 row가 ACTIVE 상태로 복구된다.
+     */
+    @Test
+    void memberReactivatesInactiveFcmTokenForSameDevice() throws Exception {
+        registerToken(owner, "owner-device", "old-token", "ANDROID", "1.0.0");
+        mockMvc.perform(delete("/api/fcm-tokens/devices/{deviceId}", "owner-device")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/fcm-tokens")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(fcmTokenBody("owner-device", "new-token", "IOS", "1.1.0")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.platform").value("IOS"));
+
+        Integer rowCount = jdbcTemplate.queryForObject(
+                "select count(*) from fcm_token where member_id = ? and device_id = ?",
+                Integer.class,
+                owner.getId(),
+                "owner-device"
+        );
+        String deletedAt = jdbcTemplate.queryForObject(
+                "select cast(deleted_at as char) from fcm_token where member_id = ? and device_id = ?",
+                String.class,
+                owner.getId(),
+                "owner-device"
+        );
+        assertThat(rowCount).isOne();
+        assertThat(deletedAt).isNull();
+    }
+
+    /**
      * 회원은 본인 기기의 FCM 토큰을 비활성화할 수 있다.
      */
     @Test

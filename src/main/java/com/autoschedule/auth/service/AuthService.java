@@ -161,8 +161,7 @@ public class AuthService {
             throw invalidRefreshToken();
         }
 
-        Member member = memberRepository.findById(memberId)
-                .filter(savedMember -> savedMember.getStatus() == MemberStatus.ACTIVE)
+        Member member = memberRepository.findActiveById(memberId)
                 .orElseThrow(this::invalidRefreshToken);
         IssuedTokens tokens = jwtTokenProvider.issue(member);
         saveRefreshToken(member, request.deviceId(), tokens);
@@ -183,8 +182,7 @@ public class AuthService {
             throw invalidRefreshToken();
         }
 
-        memberRepository.findById(memberId)
-                .filter(savedMember -> savedMember.getStatus() == MemberStatus.ACTIVE)
+        memberRepository.findActiveById(memberId)
                 .orElseThrow(this::invalidRefreshToken);
         refreshTokenStore.delete(memberId, request.deviceId());
     }

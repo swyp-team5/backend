@@ -24,6 +24,7 @@ import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -358,6 +359,40 @@ class NoticeApiIntegrationTest {
 
     /**
      * 소속되지 않은 근무자는 사업장 공지 목록을 조회할 수 없다.
+     */
+    @Test
+    void ownerCannotCreateNoticeForInactiveWorkPlace() throws Exception {
+        jdbcTemplate.update("update work_place set status = 'INACTIVE' where work_place_id = ?", workPlace.getId());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(noticeBody("inactive work place", "cannot create", false)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("4004"));
+    }
+
+    /**
+     * 삭제 시각이 기록된 사업장은 소유자에게도 공지 작성 대상이 아닌 리소스로 응답한다.
+     */
+    @Test
+    void ownerCannotCreateNoticeForDeletedWorkPlace() throws Exception {
+        jdbcTemplate.update(
+                "update work_place set deleted_at = ? where work_place_id = ?",
+                LocalDateTime.now(),
+                workPlace.getId()
+        );
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(noticeBody("deleted work place", "cannot create", false)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("4004"));
+    }
+
+    /**
+     * 비활성 상태의 사업장은 소유자에게도 공지 작성 대상이 아닌 리소스로 응답한다.
      */
     @Test
     void outsiderWorkerCannotReadNoticeList() throws Exception {
