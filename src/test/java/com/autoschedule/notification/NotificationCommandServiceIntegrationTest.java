@@ -18,8 +18,12 @@ import com.autoschedule.notification.dto.NotificationSendCommand;
 import com.autoschedule.notification.repository.FcmTokenRepository;
 import com.autoschedule.notification.service.FcmDeliveryProcessor;
 import com.autoschedule.notification.service.NotificationCommandService;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +48,9 @@ class NotificationCommandServiceIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @MockitoBean
     private FcmDeliveryProcessor fcmDeliveryProcessor;
@@ -163,6 +170,87 @@ class NotificationCommandServiceIntegrationTest {
         );
         assertThat(deliveryCount).isZero();
         verify(fcmDeliveryProcessor, timeout(300).times(0)).process(any());
+    }
+
+    /**
+     * 여러 회원에게 PUSH 알림을 보낼 때 수신자와 FCM 토큰을 회원별로 반복 조회하지 않는다.
+     */
+    @Test
+    void sendPushNotificationToMembersCreatesNotificationsAndDeliveriesWithBatchLookup() {
+        Member secondWorker = saveMember("command-worker-subject-2", "01020000001");
+        FcmToken firstToken = saveFcmToken(worker, "worker-device-1", "fcm-token-1");
+        FcmToken secondToken = saveFcmToken(worker, "worker-device-2", "fcm-token-2");
+        FcmToken thirdToken = saveFcmToken(secondWorker, "second-worker-device", "fcm-token-3");
+        Statistics statistics = resetHibernateStatistics();
+
+        List<Long> notificationIds = notificationCommandService.sendToMembers(
+                List.of(worker.getId(), secondWorker.getId()),
+                new NotificationSendCommand(
+                        NotificationType.NOTICE,
+                        PushPolicy.PUSH,
+                        "공지 알림",
+                        "새 공지가 등록되었습니다.",
+                        Map.of("noticeId", "1")
+                )
+        );
+
+        assertThat(notificationIds).hasSize(2);
+        assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(8);
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification where notification_id in (?, ?)",
+                Integer.class,
+                notificationIds.get(0),
+                notificationIds.get(1)
+        );
+        Integer deliveryCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification_delivery where fcm_token_id in (?, ?, ?)",
+                Integer.class,
+                firstToken.getId(),
+                secondToken.getId(),
+                thirdToken.getId()
+        );
+        assertThat(notificationCount).isEqualTo(2);
+        assertThat(deliveryCount).isEqualTo(3);
+        verify(fcmDeliveryProcessor, timeout(1000))
+                .process(argThat(deliveryIds -> deliveryIds.size() == 3));
+    }
+
+    /**
+     * 테스트용 회원을 저장한다.
+     */
+    private Member saveMember(String socialSubject, String phoneNumber) {
+        return memberRepository.save(Member.create(
+                SocialProvider.KAKAO,
+                socialSubject,
+                socialSubject + "@test.com",
+                "worker",
+                phoneNumber,
+                MemberRole.WORKER
+        ));
+    }
+
+    /**
+     * 테스트용 FCM 토큰을 저장한다.
+     */
+    private FcmToken saveFcmToken(Member member, String deviceId, String token) {
+        return fcmTokenRepository.save(FcmToken.create(
+                member,
+                deviceId,
+                token,
+                DevicePlatform.ANDROID,
+                "1.0.0",
+                LocalDateTime.now()
+        ));
+    }
+
+    /**
+     * Hibernate SQL 실행 통계를 초기화하고 수집을 활성화한다.
+     */
+    private Statistics resetHibernateStatistics() {
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        return statistics;
     }
 
     /**

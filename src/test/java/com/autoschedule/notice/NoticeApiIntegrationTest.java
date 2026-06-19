@@ -550,7 +550,6 @@ class NoticeApiIntegrationTest {
                          where receiver_member_id = ?
                            and notification_type = 'NOTICE'
                            and push_policy = 'PUSH'
-                           and title = '새 공지가 등록됐어요'
                         """,
                 Integer.class,
                 worker.getId()

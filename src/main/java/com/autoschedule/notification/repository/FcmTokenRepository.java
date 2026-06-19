@@ -2,8 +2,10 @@ package com.autoschedule.notification.repository;
 
 import com.autoschedule.notification.domain.FcmToken;
 import com.autoschedule.notification.domain.FcmTokenStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -48,4 +50,15 @@ public interface FcmTokenRepository extends JpaRepository<FcmToken, Long> {
      * 회원의 특정 상태 FCM 토큰 목록을 조회한다.
      */
     List<FcmToken> findByMember_IdAndStatus(Long memberId, FcmTokenStatus status);
+
+    /**
+     * FCM 토큰 ID 목록과 상태로 토큰 목록을 조회한다.
+     */
+    List<FcmToken> findByIdInAndStatus(Collection<Long> ids, FcmTokenStatus status);
+
+    /**
+     * 회원 ID 목록과 상태로 FCM 토큰 목록을 조회한다.
+     */
+    @EntityGraph(attributePaths = "member")
+    List<FcmToken> findByMember_IdInAndStatus(Collection<Long> memberIds, FcmTokenStatus status);
 }

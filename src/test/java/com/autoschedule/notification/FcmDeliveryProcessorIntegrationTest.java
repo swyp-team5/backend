@@ -20,8 +20,11 @@ import com.autoschedule.notification.repository.FcmTokenRepository;
 import com.autoschedule.notification.repository.NotificationDeliveryRepository;
 import com.autoschedule.notification.repository.NotificationRepository;
 import com.autoschedule.notification.service.FcmDeliveryProcessor;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +55,9 @@ class FcmDeliveryProcessorIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @MockitoBean
     private FcmSender fcmSender;
@@ -158,6 +164,35 @@ class FcmDeliveryProcessorIntegrationTest {
     }
 
     /**
+     * 여러 delivery를 한 번에 처리할 때 notification과 FCM 토큰을 delivery별로 반복 조회하지 않는다.
+     */
+    @Test
+    void processPendingDeliveriesUsesBatchLookupForNotificationsAndTokens() {
+        Notification notification = saveNotification();
+        FcmToken firstToken = saveFcmToken("worker-device-1", "fcm-token-1", DevicePlatform.ANDROID);
+        FcmToken secondToken = saveFcmToken("worker-device-2", "fcm-token-2", DevicePlatform.ANDROID);
+        FcmToken thirdToken = saveFcmToken("worker-device-3", "fcm-token-3", DevicePlatform.IOS);
+        NotificationDelivery firstDelivery = savePendingDelivery(notification, firstToken);
+        NotificationDelivery secondDelivery = savePendingDelivery(notification, secondToken);
+        NotificationDelivery thirdDelivery = savePendingDelivery(notification, thirdToken);
+        when(fcmSender.send(any())).thenReturn(FcmSendResult.success("provider-message-id"));
+        Statistics statistics = resetHibernateStatistics();
+
+        fcmDeliveryProcessor.process(List.of(
+                firstDelivery.getId(),
+                secondDelivery.getId(),
+                thirdDelivery.getId()
+        ));
+
+        assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(9);
+        Integer successCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification_delivery where status = 'SUCCESS'",
+                Integer.class
+        );
+        assertThat(successCount).isEqualTo(3);
+    }
+
+    /**
      * 테스트용 활성 FCM 토큰을 저장한다.
      */
     private FcmToken saveFcmToken(String deviceId, String token, DevicePlatform platform) {
@@ -175,7 +210,14 @@ class FcmDeliveryProcessorIntegrationTest {
      * 테스트용 알림과 PENDING delivery를 저장한다.
      */
     private NotificationDelivery savePendingDelivery(FcmToken fcmToken) {
-        Notification notification = notificationRepository.save(Notification.create(
+        return savePendingDelivery(saveNotification(), fcmToken);
+    }
+
+    /**
+     * 테스트용 알림을 저장한다.
+     */
+    private Notification saveNotification() {
+        return notificationRepository.save(Notification.create(
                 worker,
                 NotificationType.NOTICE,
                 PushPolicy.PUSH,
@@ -183,11 +225,27 @@ class FcmDeliveryProcessorIntegrationTest {
                 "새 공지가 등록되었습니다.",
                 null
         ));
+    }
+
+    /**
+     * 지정한 알림과 FCM 토큰으로 테스트용 PENDING delivery를 저장한다.
+     */
+    private NotificationDelivery savePendingDelivery(Notification notification, FcmToken fcmToken) {
         return notificationDeliveryRepository.save(NotificationDelivery.createFcmPending(
                 notification,
                 fcmToken.getId(),
                 null
         ));
+    }
+
+    /**
+     * Hibernate SQL 실행 통계를 초기화하고 수집을 활성화한다.
+     */
+    private Statistics resetHibernateStatistics() {
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        return statistics;
     }
 
     /**

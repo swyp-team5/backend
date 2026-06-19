@@ -1,6 +1,7 @@
 package com.autoschedule.notification.service;
 
 import com.autoschedule.notification.domain.FcmToken;
+import com.autoschedule.notification.domain.FcmTokenStatus;
 import com.autoschedule.notification.domain.Notification;
 import com.autoschedule.notification.domain.NotificationDelivery;
 import com.autoschedule.notification.domain.NotificationDeliveryStatus;
@@ -16,6 +17,8 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,23 +49,24 @@ public class FcmDeliveryProcessor {
         if (deliveryIds == null || deliveryIds.isEmpty()) {
             return;
         }
-        List<NotificationDelivery> deliveries = notificationDeliveryRepository.findByIdInAndStatus(
+        List<NotificationDelivery> deliveries = notificationDeliveryRepository.findByIdInAndStatusWithNotification(
                 deliveryIds,
                 NotificationDeliveryStatus.PENDING
         );
+        Map<Long, FcmToken> activeFcmTokens = findActiveFcmTokens(deliveries);
         for (NotificationDelivery delivery : deliveries) {
-            processOne(delivery);
+            processOne(delivery, activeFcmTokens);
         }
     }
 
     /**
      * 단일 delivery를 발송하고 성공/실패 결과와 토큰 상태를 반영한다.
      */
-    private void processOne(NotificationDelivery delivery) {
+    private void processOne(NotificationDelivery delivery, Map<Long, FcmToken> activeFcmTokens) {
         LocalDateTime attemptedAt = LocalDateTime.now();
         delivery.markAttempted(attemptedAt);
 
-        FcmToken fcmToken = findActiveFcmToken(delivery);
+        FcmToken fcmToken = findActiveFcmToken(delivery, activeFcmTokens);
         if (fcmToken == null) {
             return;
         }
@@ -83,24 +87,42 @@ public class FcmDeliveryProcessor {
     }
 
     /**
+     * delivery 목록에 포함된 활성 FCM 토큰을 한 번에 조회한다.
+     */
+    private Map<Long, FcmToken> findActiveFcmTokens(List<NotificationDelivery> deliveries) {
+        List<Long> fcmTokenIds = deliveries.stream()
+                .map(NotificationDelivery::getFcmTokenId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (fcmTokenIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return fcmTokenRepository.findByIdInAndStatus(fcmTokenIds, FcmTokenStatus.ACTIVE)
+                .stream()
+                .collect(Collectors.toMap(FcmToken::getId, fcmToken -> fcmToken));
+    }
+
+    /**
      * delivery에 연결된 활성 FCM 토큰을 조회하고 없으면 실패 이력으로 확정한다.
      */
-    private FcmToken findActiveFcmToken(NotificationDelivery delivery) {
+    private FcmToken findActiveFcmToken(NotificationDelivery delivery, Map<Long, FcmToken> activeFcmTokens) {
         if (delivery.getFcmTokenId() == null) {
             delivery.markFailure("FCM_TOKEN_NOT_FOUND", "FCM 토큰 ID가 없습니다.");
             log.warn("FCM delivery에 토큰 ID가 없습니다. deliveryId={}", delivery.getId());
             return null;
         }
-        return fcmTokenRepository.findActiveById(delivery.getFcmTokenId())
-                .orElseGet(() -> {
-                    delivery.markFailure("FCM_TOKEN_NOT_ACTIVE", "활성 FCM 토큰을 찾을 수 없습니다.");
-                    log.warn(
-                            "활성 FCM 토큰을 찾을 수 없습니다. deliveryId={} fcmTokenId={}",
-                            delivery.getId(),
-                            delivery.getFcmTokenId()
-                    );
-                    return null;
-                });
+        FcmToken fcmToken = activeFcmTokens.get(delivery.getFcmTokenId());
+        if (fcmToken != null) {
+            return fcmToken;
+        }
+        delivery.markFailure("FCM_TOKEN_NOT_ACTIVE", "활성 FCM 토큰을 찾을 수 없습니다.");
+        log.warn(
+                "활성 FCM 토큰을 찾을 수 없습니다. deliveryId={} fcmTokenId={}",
+                delivery.getId(),
+                delivery.getFcmTokenId()
+        );
+        return null;
     }
 
     /**

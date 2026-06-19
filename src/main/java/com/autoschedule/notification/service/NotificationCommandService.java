@@ -17,8 +17,12 @@ import com.autoschedule.notification.repository.NotificationRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -43,40 +47,117 @@ public class NotificationCommandService {
      */
     @Transactional
     public Long sendToMember(Long receiverMemberId, NotificationSendCommand command) {
-        Member receiver = findActiveMember(receiverMemberId);
-        Notification notification = notificationRepository.save(Notification.create(
-                receiver,
-                command.notificationType(),
-                command.pushPolicy(),
-                command.title(),
-                command.body(),
-                toJson(command.data())
-        ));
-
-        if (command.pushPolicy() == PushPolicy.PUSH) {
-            publishPushEventIfNeeded(createPendingDeliveries(notification));
-        }
-        return notification.getId();
+        List<Long> notificationIds = sendToMembers(List.of(receiverMemberId), command);
+        return notificationIds.get(0);
     }
 
     /**
-     * 회원의 활성 FCM 토큰마다 PENDING delivery를 생성한다.
+     * 여러 회원에게 알림을 저장하고 PUSH 정책이면 커밋 이후 FCM 발송 이벤트를 한 번만 발행한다.
      */
-    private List<Long> createPendingDeliveries(Notification notification) {
-        List<FcmToken> fcmTokens = fcmTokenRepository.findByMember_IdAndStatus(
-                notification.getReceiverMember().getId(),
+    @Transactional
+    public List<Long> sendToMembers(List<Long> receiverMemberIds, NotificationSendCommand command) {
+        List<Long> distinctReceiverIds = normalizeReceiverIds(receiverMemberIds);
+        if (distinctReceiverIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<Member> receivers = findActiveMembers(distinctReceiverIds);
+        List<Notification> notifications = createNotifications(receivers, command);
+        List<Notification> savedNotifications = notificationRepository.saveAll(notifications);
+
+        if (command.pushPolicy() == PushPolicy.PUSH) {
+            publishPushEventIfNeeded(createPendingDeliveries(savedNotifications, distinctReceiverIds));
+        }
+        return savedNotifications.stream()
+                .map(Notification::getId)
+                .toList();
+    }
+
+    /**
+     * 수신자 ID 목록에서 중복을 제거하고 null 값은 거부한다.
+     */
+    private List<Long> normalizeReceiverIds(List<Long> receiverMemberIds) {
+        if (receiverMemberIds == null || receiverMemberIds.isEmpty()) {
+            return List.of();
+        }
+        if (receiverMemberIds.stream().anyMatch(Objects::isNull)) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "알림 수신 회원 ID가 올바르지 않습니다.");
+        }
+        return receiverMemberIds.stream()
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 요청된 수신자가 모두 활성 회원인지 일괄 조회로 확인한다.
+     */
+    private List<Member> findActiveMembers(List<Long> receiverMemberIds) {
+        Map<Long, Member> membersById = memberRepository.findActiveByIdIn(receiverMemberIds)
+                .stream()
+                .collect(Collectors.toMap(Member::getId, Function.identity()));
+        if (membersById.size() != receiverMemberIds.size()) {
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "알림 수신 회원을 찾을 수 없습니다.");
+        }
+        return receiverMemberIds.stream()
+                .map(membersById::get)
+                .toList();
+    }
+
+    /**
+     * 회원별 알림 엔티티를 생성한다.
+     */
+    private List<Notification> createNotifications(List<Member> receivers, NotificationSendCommand command) {
+        String dataJson = toJson(command.data());
+        return receivers.stream()
+                .map(receiver -> Notification.create(
+                        receiver,
+                        command.notificationType(),
+                        command.pushPolicy(),
+                        command.title(),
+                        command.body(),
+                        dataJson
+                ))
+                .toList();
+    }
+
+    /**
+     * 수신자별 활성 FCM 토큰마다 PENDING delivery를 생성한다.
+     */
+    private List<Long> createPendingDeliveries(List<Notification> notifications, List<Long> receiverMemberIds) {
+        Map<Long, List<FcmToken>> fcmTokensByMemberId = findActiveFcmTokensByMemberId(receiverMemberIds);
+        List<NotificationDelivery> deliveries = new ArrayList<>();
+        for (Notification notification : notifications) {
+            Long receiverMemberId = notification.getReceiverMember().getId();
+            List<FcmToken> fcmTokens = fcmTokensByMemberId.getOrDefault(receiverMemberId, List.of());
+            for (FcmToken fcmToken : fcmTokens) {
+                deliveries.add(NotificationDelivery.createFcmPending(
+                        notification,
+                        fcmToken.getId(),
+                        null
+                ));
+            }
+        }
+        return notificationDeliveryRepository.saveAll(deliveries)
+                .stream()
+                .map(NotificationDelivery::getId)
+                .toList();
+    }
+
+    /**
+     * 수신자들의 활성 FCM 토큰을 한 번에 조회한 뒤 회원 ID 기준으로 묶는다.
+     */
+    private Map<Long, List<FcmToken>> findActiveFcmTokensByMemberId(List<Long> receiverMemberIds) {
+        List<FcmToken> fcmTokens = fcmTokenRepository.findByMember_IdInAndStatus(
+                receiverMemberIds,
                 FcmTokenStatus.ACTIVE
         );
-        List<Long> deliveryIds = new ArrayList<>();
+        Map<Long, List<FcmToken>> tokensByMemberId = new LinkedHashMap<>();
         for (FcmToken fcmToken : fcmTokens) {
-            NotificationDelivery delivery = notificationDeliveryRepository.save(NotificationDelivery.createFcmPending(
-                    notification,
-                    fcmToken.getId(),
-                    null
-            ));
-            deliveryIds.add(delivery.getId());
+            tokensByMemberId
+                    .computeIfAbsent(fcmToken.getMember().getId(), ignored -> new ArrayList<>())
+                    .add(fcmToken);
         }
-        return deliveryIds;
+        return tokensByMemberId;
     }
 
     /**
@@ -86,14 +167,6 @@ public class NotificationCommandService {
         if (!deliveryIds.isEmpty()) {
             eventPublisher.publishEvent(new NotificationPushRequestedEvent(deliveryIds));
         }
-    }
-
-    /**
-     * 인증 주체가 활성 회원인지 확인한다.
-     */
-    private Member findActiveMember(Long memberId) {
-        return memberRepository.findActiveById(memberId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "알림 수신 회원을 찾을 수 없습니다."));
     }
 
     /**

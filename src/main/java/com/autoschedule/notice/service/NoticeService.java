@@ -91,22 +91,20 @@ public class NoticeService {
                 CrewRole.WORKER,
                 CrewStatus.ACTIVE
         );
-        for (Long workerMemberId : workerMemberIds) {
-            notificationCommandService.sendToMember(
-                    workerMemberId,
-                    new NotificationSendCommand(
-                            NotificationType.NOTICE,
-                            PushPolicy.PUSH,
-                            "새 공지가 등록됐어요",
-                            notice.getTitle(),
-                            Map.of(
-                                    "type", NotificationType.NOTICE.name(),
-                                    "workPlaceId", String.valueOf(workPlace.getId()),
-                                    "noticeId", String.valueOf(notice.getId())
-                            )
-                    )
-            );
-        }
+        notificationCommandService.sendToMembers(
+                workerMemberIds,
+                new NotificationSendCommand(
+                        NotificationType.NOTICE,
+                        PushPolicy.PUSH,
+                        "새 공지가 등록됐어요",
+                        notice.getTitle(),
+                        Map.of(
+                                "type", NotificationType.NOTICE.name(),
+                                "workPlaceId", String.valueOf(workPlace.getId()),
+                                "noticeId", String.valueOf(notice.getId())
+                        )
+                )
+        );
     }
 
     /**
