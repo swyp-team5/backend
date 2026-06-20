@@ -3,10 +3,14 @@ package com.autoschedule.member.repository;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.domain.SocialProvider;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 회원 소셜 식별자 기반 조회와 저장을 담당한다.
@@ -17,6 +21,13 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
      * 회원 ID와 상태로 회원을 조회한다.
      */
     Optional<Member> findByIdAndStatus(Long id, MemberStatus status);
+
+    /**
+     * 특정 회원 row에 쓰기 락을 걸어 같은 회원의 프로필 변경 요청을 직렬화한다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from Member m where m.id = :id and m.status = :status")
+    Optional<Member> findByIdAndStatusForUpdate(@Param("id") Long id, @Param("status") MemberStatus status);
 
     /**
      * 회원 ID 목록과 상태로 회원 목록을 조회한다.

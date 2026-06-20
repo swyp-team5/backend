@@ -119,4 +119,12 @@ public class Member extends BaseEntity {
         return !deletedAt.plus(gracePeriod).isBefore(now);
     }
 
+    /**
+     * 회원 본인의 프로필 기본 정보를 수정한다.
+     */
+    public void updateProfile(String name, String phoneNumber) {
+        this.name = name;
+        this.phoneNumber = phoneNumber;
+    }
+
 }
