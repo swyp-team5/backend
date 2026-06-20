@@ -107,3 +107,26 @@ docker compose down
 ```powershell
 docker compose down -v
 ```
+
+## 프로필 이미지 S3 임시 설정
+
+현재 로컬 Docker 패키지는 Spring Boot + MySQL + Redis를 한 번에 실행합니다. 프로필 이미지 기능은 S3 presigned URL 방식을 사용하므로, 실제 업로드 테스트를 하려면 아래 환경변수를 `.env`에 추가해야 합니다.
+
+운영 값이나 실제 secret은 GitHub에 올리지 않습니다. 값은 백엔드 담당자가 별도로 전달합니다.
+
+```env
+AWS_REGION=ap-northeast-2
+AWS_S3_PROFILE_IMAGE_BUCKET=your-profile-image-bucket
+AWS_S3_PROFILE_IMAGE_PUBLIC_BASE_URL=https://your-cloudfront-domain.example.com
+AWS_S3_PROFILE_IMAGE_OBJECT_KEY_PREFIX=profile-images
+AWS_S3_PROFILE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS=300
+AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES=10485760
+```
+
+로컬에서 아직 S3 버킷을 만들지 않았다면 위 값은 임시값으로 둘 수 있습니다. 다만 프로필 이미지 업로드 URL 발급 후 실제 S3 업로드와 확정 API까지 테스트하려면 유효한 S3 버킷, AWS 인증 정보, 버킷 권한이 필요합니다.
+
+MySQL 최초 실행 시 적용되는 DDL 파일은 아래 최종본입니다.
+
+```text
+src/main/resources/db/DDL_V5.sql
+```

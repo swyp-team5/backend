@@ -42,3 +42,12 @@ auth:
       private-key: test-private-key
       jwks-uri: https://appleid.apple.com/auth/keys
       token-uri: https://appleid.apple.com/auth/token
+
+profile:
+  image:
+    region: ap-northeast-2
+    bucket: autoschedule-profile-test
+    public-base-url: https://cdn.example.com
+    object-key-prefix: profile-images
+    upload-url-expires-seconds: 300
+    max-size-bytes: 10485760

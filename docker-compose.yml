@@ -27,6 +27,12 @@ services:
       APPLE_TOKEN_URI: "${APPLE_TOKEN_URI:-https://appleid.apple.com/auth/token}"
       FCM_ENABLED: "${FCM_ENABLED:-false}"
       FCM_CREDENTIALS_PATH: "${FCM_CREDENTIALS_PATH:-}"
+      AWS_REGION: "${AWS_REGION:-ap-northeast-2}"
+      AWS_S3_PROFILE_IMAGE_BUCKET: "${AWS_S3_PROFILE_IMAGE_BUCKET:-autoschedule-profile-image-local}"
+      AWS_S3_PROFILE_IMAGE_PUBLIC_BASE_URL: "${AWS_S3_PROFILE_IMAGE_PUBLIC_BASE_URL:-https://static.example.com}"
+      AWS_S3_PROFILE_IMAGE_OBJECT_KEY_PREFIX: "${AWS_S3_PROFILE_IMAGE_OBJECT_KEY_PREFIX:-profile-images}"
+      AWS_S3_PROFILE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS: "${AWS_S3_PROFILE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS:-300}"
+      AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES: "${AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES:-10485760}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -53,7 +59,7 @@ services:
       - --default-time-zone=+09:00
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./src/main/resources/db/DDL_V4.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./src/main/resources/db/DDL_V5.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
       - ./src/main/resources/db/DML_LOCAL_SEED.sql:/docker-entrypoint-initdb.d/002-local-seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
