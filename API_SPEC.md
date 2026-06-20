@@ -1999,3 +1999,439 @@ Firebase Admin SDK는 Java 서버 SDK를 사용한다. 서버는 기본적으로
 - FCM 토큰은 기기별로 저장하며, 물리 삭제하지 않고 `INACTIVE`로 비활성화한다.
 - 앱 내 알림은 FCM 발송 성공 여부와 무관하게 `notification`에 저장한다.
 - FCM 발송 이력은 `notification_delivery`에 저장하며, `fcm_token_id`는 FK 없는 스냅샷 컬럼이다.
+
+## 15. 프로필 API
+
+프로필 API는 로그인한 회원 본인의 이름, 휴대폰 번호, 프로필 이미지를 조회/수정한다. 모든 백엔드 API는 JWT 인증이 필요하며 OWNER, WORKER 모두 사용할 수 있다.
+
+프로필 이미지는 앱이 백엔드로 파일을 전송하지 않고, 백엔드가 발급한 S3 presigned PUT URL로 앱이 S3에 직접 업로드한다. 조회는 MVP 기준 public S3 object URL을 사용한다.
+
+#### 공통 인증
+
+```http
+Authorization: Bearer {accessToken}
+```
+
+#### 프로필 이미지 공통 정책
+
+| 항목 | 정책 |
+| --- | --- |
+| 보유 개수 | 회원 1명당 현재 프로필 이미지 0개 또는 1개 |
+| 업로드 방식 | S3 presigned PUT URL 직접 업로드 |
+| 조회 방식 | public S3 object URL |
+| 허용 형식 | `image/jpeg`, `image/png`, `image/webp` |
+| 허용 확장자 | `jpg`, `jpeg`, `png`, `webp` |
+| 최대 크기 | 10MB |
+| 이미지 검증 | 업로드 확정 시 S3 객체의 content type, 크기, 매직 바이트 검증 |
+| 수정 방식 | 새 이미지 업로드 후 확정하면 기존 이미지 자동 교체 |
+| 삭제 방식 | 현재 이미지 row를 `DELETED` 처리하고 S3 객체 삭제 요청 |
+
+### 15.1 내 프로필 조회
+
+```http
+GET /api/members/me/profile
+Authorization: Bearer {accessToken}
+```
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "memberId": 1,
+  "name": "정진섭",
+  "phoneNumber": "01012345678",
+  "profileImage": {
+    "profileImageId": 10,
+    "originalFileName": "profile.png",
+    "storedFileName": "a1b2c3d4.png",
+    "objectKey": "profile-images/1/a1b2c3d4.png",
+    "imageUrl": "https://static.example.com/profile-images/1/a1b2c3d4.png",
+    "contentType": "image/png",
+    "fileSize": 1024,
+    "uploadedAt": "2026-06-20T09:00:00"
+  }
+}
+```
+
+프로필 이미지가 없으면 `profileImage`는 `null`이다.
+
+#### 응답 필드
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| memberId | number | 회원 ID |
+| name | string | 회원 이름 |
+| phoneNumber | string | 하이픈 없는 11자리 휴대폰 번호 |
+| profileImage | object/null | 현재 프로필 이미지. 없으면 `null` |
+| profileImage.profileImageId | number | 프로필 이미지 ID |
+| profileImage.originalFileName | string | 앱에서 업로드 URL 발급 시 전달한 원본 파일명 |
+| profileImage.storedFileName | string | 서버가 생성한 저장 파일명 |
+| profileImage.objectKey | string | S3 object key |
+| profileImage.imageUrl | string | 앱에서 바로 표시 가능한 public 이미지 URL |
+| profileImage.contentType | string | S3 객체 content type |
+| profileImage.fileSize | number | S3 객체 파일 크기 byte |
+| profileImage.uploadedAt | string | 업로드 확정 시각 |
+
+### 15.2 내 프로필 수정
+
+```http
+PATCH /api/members/me/profile
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 요청 Body
+
+```json
+{
+  "name": "수정이름",
+  "phoneNumber": "01099998888"
+}
+```
+
+#### 검증 규칙
+
+| 필드 | 필수 | 규칙 |
+| --- | --- | --- |
+| name | Y | 공백 불가, 최대 10자 |
+| phoneNumber | Y | 하이픈 없이 11자리 숫자 |
+
+#### 실패 예시
+
+```json
+{
+  "name": "",
+  "phoneNumber": "010-1234-5678"
+}
+```
+
+위 요청은 `400 Bad Request`가 발생한다. 휴대폰 번호는 클라이언트에서 정규화한 뒤 하이픈 없이 11자리 숫자로 전달한다.
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+응답 형식은 `15.1 내 프로필 조회`와 동일하다.
+
+### 15.3 프로필 이미지 업로드 URL 발급
+
+앱은 이미지 파일을 백엔드로 직접 전송하지 않는다. 먼저 백엔드에서 S3 presigned PUT URL을 발급받고, 앱이 해당 URL로 S3에 직접 업로드한다.
+
+이 API를 호출하면 백엔드는 `profile_image`에 `PENDING` row를 생성한다. 기존에 확정되지 않은 `PENDING` row가 있으면 새 URL 발급 전에 기존 row를 `DELETED`로 전환한다.
+
+```http
+POST /api/members/me/profile-image/upload-url
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 요청 Body
+
+```json
+{
+  "originalFileName": "profile.png",
+  "contentType": "image/png",
+  "fileSize": 1024
+}
+```
+
+#### 검증 규칙
+
+| 필드 | 필수 | 규칙 |
+| --- | --- | --- |
+| originalFileName | Y | 확장자 포함 |
+| contentType | Y | `image/jpeg`, `image/png`, `image/webp`만 허용 |
+| fileSize | Y | 1 byte 이상, 10MB 이하 |
+
+#### 추가 검증 규칙
+
+- `originalFileName`에는 `/`, `\`, 제어 문자를 포함할 수 없다.
+- 파일 확장자와 `contentType`이 일치해야 한다.
+- `image/jpeg`는 `jpg`, `jpeg`만 허용한다.
+- `image/png`는 `png`만 허용한다.
+- `image/webp`는 `webp`만 허용한다.
+- `fileSize`는 클라이언트가 선택한 파일의 byte 크기다.
+- 최종 파일 크기는 업로드 확정 API에서 S3 객체 메타데이터로 다시 검증한다.
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "uploadUrl": "https://s3-presigned-upload-url",
+  "objectKey": "profile-images/1/a1b2c3d4.png",
+  "storedFileName": "a1b2c3d4.png",
+  "headers": {
+    "content-type": "image/png"
+  },
+  "expiresInSeconds": 300
+}
+```
+
+#### 응답 필드
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| uploadUrl | string | S3 PUT 업로드용 presigned URL |
+| objectKey | string | 업로드 확정 API에 전달할 S3 object key |
+| storedFileName | string | 서버가 생성한 저장 파일명 |
+| headers | object | S3 PUT 요청에 그대로 포함해야 하는 헤더 |
+| expiresInSeconds | number | presigned URL 만료 시간 |
+
+#### Flutter 처리 순서
+
+1. 앱에서 이미지 파일을 선택한다.
+2. 파일명, MIME type, 파일 byte 크기를 구한다.
+3. 이 API를 호출해 `uploadUrl`, `objectKey`, `headers`를 받는다.
+4. `uploadUrl`로 S3 PUT 업로드를 수행한다.
+5. S3 PUT 성공 후 `15.5 프로필 이미지 업로드 확정` API를 호출한다.
+
+#### S3 PUT 요청 주의사항
+
+`uploadUrl`은 백엔드 API URL이 아니라 AWS S3 URL이다. 이 요청에는 백엔드 JWT 인증을 넣지 않는다.
+
+```http
+PUT {uploadUrl}
+Content-Type: image/png
+
+{binary image file}
+```
+
+클라이언트는 응답의 `headers`를 S3 PUT 요청에 그대로 포함해야 한다.
+
+반드시 지켜야 할 규칙:
+
+- `Authorization: Bearer ...`를 넣지 않는다.
+- `Content-Length`를 직접 넣지 않는다.
+- `Host`를 직접 넣지 않는다.
+- `Content-Type` 값은 비워두면 안 된다.
+- `Content-Type`은 업로드 URL 발급 요청의 `contentType`과 같아야 한다.
+- `multipart/form-data`로 보내지 않는다.
+- JSON, form-data, raw text가 아니라 파일 binary 자체를 PUT body로 보낸다.
+- S3 PUT 성공 응답은 일반적으로 `200 OK`이며 응답 body가 비어 있을 수 있다.
+
+Postman으로 테스트할 때:
+
+- Authorization 탭: `No Auth`
+- Headers 탭: `Content-Type: image/png`
+- Body 탭: `binary` 선택 후 실제 이미지 파일 선택
+
+S3 PUT 실패 또는 사용자가 업로드를 취소한 경우, 앱은 다시 업로드 URL 발급 API를 호출하면 된다. 서버는 이전 `PENDING` row를 `DELETED` 처리하고 새 `PENDING` row를 생성한다.
+
+### 15.4 S3 PUT 업로드
+
+이 단계는 백엔드 API가 아니라 S3 직접 호출이다.
+
+#### 요청
+
+```http
+PUT {uploadUrl}
+Content-Type: {headers의 content-type 값}
+```
+
+Body:
+
+```text
+binary image file
+```
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+#### 흔한 실패 원인
+
+| S3 오류 | 원인 | 해결 |
+| --- | --- | --- |
+| `SignatureDoesNotMatch` | `Content-Type`이 비어 있거나 발급 시 값과 다름 | 응답 `headers`의 content type을 그대로 넣기 |
+| `SignatureDoesNotMatch` | `Authorization`, `Content-Length`, `Host` 등을 직접 추가 | 해당 헤더 제거 |
+| `SignatureDoesNotMatch` | 이전에 발급받은 만료/구버전 URL 사용 | 업로드 URL 재발급 |
+| `AccessDenied` | presigned URL 만료 또는 버킷 정책 문제 | URL 재발급 또는 S3 정책 확인 |
+
+### 15.5 프로필 이미지 업로드 확정
+
+S3 업로드 성공 후 앱은 백엔드에 확정 API를 호출한다. 백엔드는 S3 객체의 `HeadObject`와 앞부분 byte range를 조회해 실제 이미지 여부, content type, 크기 제한을 다시 검증한다.
+
+```http
+PUT /api/members/me/profile-image
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 요청 Body
+
+```json
+{
+  "objectKey": "profile-images/1/a1b2c3d4.png"
+}
+```
+
+`objectKey`는 업로드 URL 발급 API 응답의 `objectKey`를 그대로 전달한다.
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+응답 형식은 `15.1 내 프로필 조회`와 동일하다.
+
+#### 주요 비즈니스 규칙
+
+- 회원 1명은 현재 프로필 이미지 0개 또는 1개만 가진다.
+- 업로드 URL 발급으로 생성된 `PENDING` row만 확정할 수 있다.
+- 새 이미지를 확정하면 기존 `ACTIVE` row는 `DELETED`로 전환하고, 새 `PENDING` row를 `ACTIVE`로 전환한다.
+- 기존 프로필 이미지가 없으면 등록으로 동작한다.
+- 기존 프로필 이미지가 있으면 수정/교체로 동작한다.
+- 확정되지 않은 이전 `PENDING` row가 있으면 새 업로드 URL 발급 시 `DELETED`로 전환한다.
+- 기존 S3 객체와 실패한 업로드 객체 삭제는 DB 커밋 이후 best-effort로 요청한다.
+- S3 객체 삭제 실패는 API 실패로 처리하지 않고 error log만 남긴다.
+- `objectKey`는 본인 회원 ID 경로(`profile-images/{memberId}/...`)만 확정할 수 있다.
+- 이미지 검증 실패 시 PENDING row를 `DELETED`로 전환하고 업로드된 S3 객체 삭제를 요청한 뒤 `400`을 반환한다.
+
+#### 실패 케이스
+
+| HTTP | 상황 |
+| --- | --- |
+| 400 | S3 객체가 이미지 파일이 아님 |
+| 400 | S3 객체 content type이 허용되지 않음 |
+| 400 | S3 객체 크기가 10MB 초과 |
+| 400 | presigned URL 만료 시간이 지난 PENDING row 확정 |
+| 403 | 본인 경로가 아닌 `objectKey` 확정 시도 |
+| 404 | 확정 가능한 PENDING row가 없음 |
+| 404 | S3에 해당 object가 없음 |
+
+### 15.6 프로필 이미지 수정/교체
+
+별도 수정 API는 없다. 현재 프로필 이미지가 있는 상태에서 `15.3 -> 15.4 -> 15.5` 흐름을 다시 수행하면 기존 이미지가 새 이미지로 교체된다.
+
+#### 수정 플로우
+
+1. 새 이미지로 업로드 URL 발급
+2. 새 이미지를 S3 PUT 업로드
+3. 업로드 확정 API 호출
+4. 프로필 조회 API로 `profileImage.objectKey`, `profileImage.imageUrl` 변경 확인
+
+### 15.7 프로필 이미지 삭제
+
+```http
+DELETE /api/members/me/profile-image
+Authorization: Bearer {accessToken}
+```
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+#### 주요 비즈니스 규칙
+
+- 현재 프로필 이미지가 없으면 멱등하게 `204 No Content`를 반환한다.
+- 현재 프로필 이미지가 있으면 DB row를 `DELETED` 상태로 전환하고 `deleted_at`을 기록한다.
+- 실제 S3 객체 삭제는 DB 커밋 이후 best-effort로 요청한다.
+- S3 객체 삭제 실패는 API 실패로 처리하지 않고 error log만 남긴다.
+
+삭제 후 `GET /api/members/me/profile`을 호출하면 `profileImage`는 `null`이어야 한다.
+
+### 15.8 Flutter 구현 예시
+
+아래는 개념 예시다. 실제 프로젝트의 HTTP client, MIME type 추론, 파일 객체 API에 맞게 조정한다.
+
+```dart
+final uploadUrlResponse = await api.post(
+  '/api/members/me/profile-image/upload-url',
+  data: {
+    'originalFileName': fileName,
+    'contentType': contentType,
+    'fileSize': fileSize,
+  },
+);
+
+final uploadUrl = uploadUrlResponse.data['uploadUrl'];
+final objectKey = uploadUrlResponse.data['objectKey'];
+final headers = Map<String, String>.from(uploadUrlResponse.data['headers']);
+
+await rawHttpClient.put(
+  Uri.parse(uploadUrl),
+  headers: headers,
+  bodyBytes: imageBytes,
+);
+
+final profile = await api.put(
+  '/api/members/me/profile-image',
+  data: {
+    'objectKey': objectKey,
+  },
+);
+```
+
+주의:
+
+- S3 PUT에는 백엔드 API client의 기본 `Authorization` 헤더가 들어가면 안 된다.
+- S3 PUT은 백엔드 base URL을 사용하지 않는다.
+- S3 PUT은 파일 byte를 그대로 body에 넣는다.
+
+### 15.9 profile_image DB 정책
+
+`profile_image`는 회원별 프로필 이미지 업로드 시도와 현재 프로필 이미지 메타데이터를 저장한다. 실제 이미지 파일은 S3에 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| profile_image_id | BIGINT | N | PK |
+| member_id | BIGINT | N | 회원 ID, `member` FK |
+| original_file_name | VARCHAR(255) | N | 앱에서 전달한 원본 파일명 |
+| stored_file_name | VARCHAR(100) | N | 서버가 생성한 저장 파일명 |
+| object_key | VARCHAR(500) | N | S3 object key |
+| image_url | VARCHAR(700) | N | 앱 표시용 이미지 URL |
+| content_type | VARCHAR(50) | N | 이미지 content type |
+| file_size | BIGINT | N | 파일 크기 byte |
+| status | VARCHAR(20) | N | `PENDING`, `ACTIVE`, `DELETED` |
+| uploaded_at | DATETIME | Y | 업로드 확정 시각. `PENDING` 상태에서는 `NULL` |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 삭제 처리 시각 |
+| active_member_id | BIGINT | Y | `ACTIVE` 1건 보장용 generated column |
+| pending_member_id | BIGINT | Y | `PENDING` 1건 보장용 generated column |
+
+#### 제약조건과 인덱스
+
+```text
+fk_profile_image_member (member_id -> member.member_id)
+uk_profile_image_object_key (object_key)
+uk_profile_image_active_member (active_member_id)
+uk_profile_image_pending_member (pending_member_id)
+idx_profile_image_member_status_deleted (member_id, status, deleted_at)
+```
+
+`active_member_id`, `pending_member_id`는 MySQL generated column이다. `status = 'ACTIVE' and deleted_at is null`인 row만 `active_member_id = member_id`를 가지므로 회원별 현재 프로필 이미지 1건을 DB에서 보장한다. `PENDING`도 동일하게 회원별 업로드 대기 row 1건만 허용한다. `DELETED` 이력은 두 generated column이 `NULL`이므로 여러 건 저장할 수 있다.
+
+### 15.10 프로필 이미지 S3 운영 설정
+
+| 환경변수 | 설명 |
+| --- | --- |
+| AWS_REGION | S3 버킷 리전 |
+| AWS_S3_PROFILE_IMAGE_BUCKET | 프로필 이미지 S3 버킷명 |
+| AWS_S3_PROFILE_IMAGE_PUBLIC_BASE_URL | 앱 표시용 이미지 base URL. 추후 CloudFront 도메인 권장 |
+| AWS_S3_PROFILE_IMAGE_OBJECT_KEY_PREFIX | S3 object key prefix. 기본 `profile-images` |
+| AWS_S3_PROFILE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS | presigned upload URL 만료 시간. 기본 300초 |
+| AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES | 최대 파일 크기. 기본 10485760 byte |
+
+#### S3 버킷 정책 요약
+
+- 업로드는 백엔드가 발급한 presigned PUT URL로만 수행한다.
+- 조회는 MVP 기준 `profile-images/*` public read를 허용한다.
+- 버킷 전체 public open은 사용하지 않는다.
+- ACL은 사용하지 않는다.
+- 삭제/검증/URL 발급 권한은 백엔드 IAM principal만 가진다.
