@@ -53,11 +53,11 @@ INSERT INTO terms (
         'ACTIVE',
         '1.0',
         '로컬 테스트용 사장님 추가 약관입니다. 실제 운영 약관 내용이 아닙니다.'
-    )
+    ) AS new
 ON DUPLICATE KEY UPDATE
-    terms_type = VALUES(terms_type),
-    title = VALUES(title),
-    required = VALUES(required),
-    status = VALUES(status),
-    version = VALUES(version),
-    content = VALUES(content);
+                     terms_type = new.terms_type,
+                     title = new.title,
+                     required = new.required,
+                     status = new.status,
+                     version = new.version,
+                     content = new.content;
