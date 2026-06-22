@@ -11,7 +11,10 @@ import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
+
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.time.temporal.WeekFields;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -48,6 +51,8 @@ public class ScheduleConditionService {
         validateScheduleCondition(request); // 요청값들에 대해서 검증 코드
 
         LocalDate today = LocalDate.now(); // 오늘 일자를 기준으로 다음주 일자를 가져오는 코드
+
+        validateNextWeekScheduleNotDuplicated(workPlace.getId(), today);
 
         // creat() -> 엔티티를 만듬 / save() -> DB에 자징함
         WeekSchedule weekSchedule = weekScheduleRepository.save(
@@ -347,16 +352,34 @@ public class ScheduleConditionService {
             }
         }
     }
+    /**
+     *  오늘 기준 다음 주의 스케줄 조건이 존재하는지 확인하는 메서드
+     */
+    private void validateNextWeekScheduleNotDuplicated(Long workPlaceId, LocalDate today) {
+        String nextWeekScheduleName = createNextWeekScheduleName(today);
+        boolean exists = weekScheduleRepository
+                .existsByWorkPlace_IdAndWeekScheduleNameAndStatusAndDeletedAtIsNull(
+                        workPlaceId,
+                        nextWeekScheduleName,
+                        WeekScheduleStatus.ACTIVE
+                );
+        if (exists) {
+            throw new ApiException(
+                    ErrorCode.CONFLICT,
+                    "다음 주차 스케줄 조건이 이미 존재합니다."
+            );
+        }
+    }
 
     /**
      *  오늘 기준 다음 주의 "0월 0주차" 이름을 생성시키는 메서드
      */
     private String createNextWeekScheduleName(LocalDate date) {
 
-        date = LocalDate.now().plusWeeks(1);
+        LocalDate nextMonday = date.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
 
-        int month = date.getMonthValue();
-        int weekOfMonth = date.get(WeekFields.of(Locale.KOREA).weekOfMonth());
+        int month = nextMonday.getMonthValue();
+        int weekOfMonth = nextMonday.get(WeekFields.of(Locale.KOREA).weekOfMonth());
 
         return month + "월 " + weekOfMonth + "주차";
     }

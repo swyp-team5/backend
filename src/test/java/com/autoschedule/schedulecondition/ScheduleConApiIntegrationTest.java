@@ -25,8 +25,11 @@ import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
+
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -436,6 +439,36 @@ class ScheduleConApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("4000"))
                 .andExpect(jsonPath("$.errors[?(@.field == 'maxPersonalWorkCount')]").exists());
+    }
+
+    /**
+     * 동일 사업장에 같은 주차 이름(다음주)의 스케줄 조건이 이미 존재하면 409를 반환한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenNextWeekScheduleAlreadyExists() throws Exception {
+        // 다음주 주차 이름을 서비스와 동일한 로직으로 계산
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        int month = nextMonday.getMonthValue();
+        int weekOfMonth = nextMonday.get(java.time.temporal.WeekFields.of(java.util.Locale.KOREA).weekOfMonth());
+        String nextWeekName = month + "월 " + weekOfMonth + "주차";
+
+        // 이미 같은 주차 스케줄 조건이 존재하는 상태를 만든다
+        weekScheduleRepository.save(WeekSchedule.create(
+                workPlace,
+                nextWeekName,
+                LocalDate.now().plusDays(3),
+                LocalTime.of(9, 0),
+                LocalTime.of(22, 0),
+                1,
+                5
+        ));
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildValidRequest()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("4005"));
     }
 
     // ─────────────────────────────────────────────
