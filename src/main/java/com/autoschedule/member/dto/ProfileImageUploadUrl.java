@@ -1,4 +1,4 @@
-package com.autoschedule.member.service;
+package com.autoschedule.member.dto;
 
 import java.util.Map;
 
