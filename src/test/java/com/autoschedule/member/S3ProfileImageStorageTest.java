@@ -5,8 +5,8 @@ import static org.mockito.Mockito.mock;
 
 import com.autoschedule.member.config.ProfileImageProperties;
 import com.autoschedule.member.infra.S3ProfileImageStorage;
-import com.autoschedule.member.service.ProfileImageUploadTarget;
-import com.autoschedule.member.service.ProfileImageUploadUrl;
+import com.autoschedule.member.dto.ProfileImageUploadTarget;
+import com.autoschedule.member.dto.ProfileImageUploadUrl;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;

@@ -65,7 +65,7 @@ public class MemberWithdrawalService {
      */
     private Member findMember(Long memberId) {
         return memberRepository.findById(memberId)
-                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "회원 정보를 찾을 수 없습니다."));
     }
 
     /**

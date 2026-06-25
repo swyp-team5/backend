@@ -7,14 +7,13 @@ import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberStatus;
 import com.autoschedule.member.domain.ProfileImage;
 import com.autoschedule.member.domain.ProfileImageStatus;
-import com.autoschedule.member.dto.MemberProfileResponse;
-import com.autoschedule.member.dto.ProfileImageConfirmRequest;
-import com.autoschedule.member.dto.ProfileImageUploadUrlRequest;
-import com.autoschedule.member.dto.ProfileImageUploadUrlResponse;
+import com.autoschedule.member.dto.*;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.member.repository.ProfileImageRepository;
 import java.time.LocalDateTime;
 import java.util.UUID;
+
+import com.autoschedule.member.repository.ProfileImageStorage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -127,7 +126,7 @@ public class ProfileImageService {
      */
     private Member findActiveMemberForUpdate(Long memberId) {
         return memberRepository.findByIdAndStatusForUpdate(memberId, MemberStatus.ACTIVE)
-                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "회원 정보를 찾을 수 없습니다."));
     }
 
     /**

@@ -1,6 +1,5 @@
 package com.autoschedule.member.dto;
 
-import com.autoschedule.member.service.ProfileImageUploadUrl;
 import java.util.Map;
 
 /**
