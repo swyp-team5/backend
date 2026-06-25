@@ -285,13 +285,53 @@ public class ScheduleConditionService {
      *  스케줄 조건 검증 메서드
      */
     private void validateScheduleCondition(WeekScheduleCreateRequest request) {
+
+        // 1. 정확히 7일인지 검증
+        if (request.days().size() != 7) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "스케줄 조건은 7일(월~일)을 모두 포함해야 합니다."
+            );
+        }
+
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate nextSunday = nextMonday.plusDays(6);
+
         Set<String> dayKeys = new HashSet<>();
+        Set<LocalDate> dateKeys = new HashSet<>();
 
         for (DayCreateRequest dayRequest : request.days()) {
             validateDayCondition(dayRequest, request);
 
-            String dayKey = dayRequest.groupingId() + ":" + dayRequest.dayName();
+            LocalDate date = dayRequest.date();
 
+            // 2. 날짜가 다음 주(월~일) 범위 내에 있는지 검증
+            if (date.isBefore(nextMonday) || date.isAfter(nextSunday)) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "날짜는 다음 주(" + nextMonday + " ~ " + nextSunday + ") 범위 내에 있어야 합니다."
+                );
+            }
+
+            // 3. dayName과 실제 날짜의 요일이 일치하는지 검증
+            ScheduleDayName actualDayName = ScheduleDayName.valueOf(date.getDayOfWeek().name());
+            if (dayRequest.dayName() != actualDayName) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "dayName과 실제 날짜의 요일이 일치하지 않습니다."
+                );
+            }
+
+            // 4. 날짜 중복 검증
+            if (!dateKeys.add(date)) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "동일한 날짜가 중복될 수 없습니다."
+                );
+            }
+
+            // 기존: 같은 그룹 내 동일 요일 중복 검증
+            String dayKey = dayRequest.groupingId() + ":" + dayRequest.dayName();
             if (!dayKeys.add(dayKey)) {
                 throw new ApiException(
                         ErrorCode.VALIDATION_FAILED,
