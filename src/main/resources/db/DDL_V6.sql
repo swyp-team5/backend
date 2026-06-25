@@ -433,9 +433,9 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `time_detail` (
     `time_detail_id` BIGINT NOT NULL AUTO_INCREMENT,
     `day_id` BIGINT NOT NULL,
-    `work_part_no` BIGINT NOT NULL,
+    `work_part_no` INT NOT NULL,
     `time_name` VARCHAR(20) NULL,
-    `worker_count` BIGINT NOT NULL,
+    `worker_count` INT NOT NULL,
     `start_time` TIME NOT NULL,
     `close_time` TIME NOT NULL,
     `rest_time` INT NOT NULL,
