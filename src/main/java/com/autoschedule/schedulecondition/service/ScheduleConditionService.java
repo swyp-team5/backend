@@ -1,5 +1,6 @@
 package com.autoschedule.schedulecondition.service;
 
+import com.autoschedule.crew.domain.CrewJoinStatus;
 import com.autoschedule.crew.domain.CrewStatus;
 import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
@@ -12,6 +13,7 @@ import com.autoschedule.schedulecondition.repository.DayRepository;
 import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
+import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 
 import java.time.DayOfWeek;
@@ -49,7 +51,7 @@ public class ScheduleConditionService {
             WeekScheduleCreateRequest request
     ) {
         Member owner = findActiveMember(ownerMemberId); // 현재 로그인한 사장 회원을 조회함
-        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId()); // 사장회원이 이 사업장의 사장인지 확인
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId()); // 사업장 존재 + 사장 권한 확인
 
         validateScheduleCondition(request); // 요청값들에 대해서 검증 코드
 
@@ -155,8 +157,12 @@ public class ScheduleConditionService {
     ) {
         findActiveMember(memberId);
 
+        WorkPlace workPlace = findActiveWorkPlace(
+                workPlaceId
+        );
+
         validateCrewMember(
-                workPlaceId,
+                workPlace.getId(),
                 memberId
         );
 
@@ -200,14 +206,21 @@ public class ScheduleConditionService {
     ) {
         findActiveMember(memberId);
 
+        WorkPlace workPlace = findActiveWorkPlace(
+                workPlaceId
+        );
+
         validateCrewMember(
-                workPlaceId,
+                workPlace.getId(),
                 memberId
         );
 
+        WeekSchedule weekSchedule = weekScheduleRepository.findByIdAndStatusAndDeletedAtIsNull(weekScheduleId,WeekScheduleStatus.ACTIVE)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주차의 스케줄 조건을 찾을 수 없습니다."));
+
         Day day = dayRepository
                 .findByWeekSchedule_IdAndDateAndStatusAndDeletedAtIsNull(
-                        weekScheduleId,
+                        weekSchedule.getId(),
                         date,
                         DayStatus.ACTIVE
                 )
@@ -550,9 +563,10 @@ public class ScheduleConditionService {
             Long workPlaceId,
             Long memberId
     ) {
-        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndStatus(
+        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndJoinStatusAndStatus(
                 memberId,
                 workPlaceId,
+                CrewJoinStatus.APPROVED,
                 CrewStatus.ACTIVE
         );
 
@@ -562,10 +576,29 @@ public class ScheduleConditionService {
     }
 
     /**
-     *  사장이 해당 사업장에 맞는 사장인지 검증하는 메서드
+     * 사업장 존재 여부를 먼저 확인한 뒤 소유자를 검증한다.
      */
     private WorkPlace findOwnedActiveWorkPlace(Long workPlaceId, Long ownerMemberId) {
-        return workPlaceRepository.findOwnedActiveById(workPlaceId, ownerMemberId)
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "조회할 수 있는 사업장을 찾을 수 없습니다."));
+        WorkPlace workPlace = workPlaceRepository
+                .findByIdAndStatusAndDeletedAtIsNull(workPlaceId, WorkPlaceStatus.ACTIVE)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "사업장을 찾을 수 없습니다."));
+
+        if (!workPlace.getOwnerMemberId().equals(ownerMemberId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "권한이 없습니다.");
+        }
+
+        return workPlace;
     }
+
+    /**
+     * 사업장 존재 여부를 먼저 확인한 뒤 소유자를 검증한다.
+     */
+    private WorkPlace findActiveWorkPlace(Long workPlaceId) {
+        WorkPlace workPlace = workPlaceRepository
+                .findByIdAndStatusAndDeletedAtIsNull(workPlaceId, WorkPlaceStatus.ACTIVE)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "사업장을 찾을 수 없습니다."));
+
+        return workPlace;
+    }
+
 }

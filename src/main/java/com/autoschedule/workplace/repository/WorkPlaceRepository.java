@@ -34,4 +34,9 @@ public interface WorkPlaceRepository extends JpaRepository<WorkPlace, Long> {
      * 사장님이 소유한 사업장을 조회한다.
      */
     Optional<WorkPlace> findByIdAndOwnerMemberId(Long id, Long ownerMemberId);
+
+    /**
+     * 사업장 ID와 상태, 삭제 시각 조건으로 사업장을 조회한다. (소유자 무관)
+     */
+    Optional<WorkPlace> findByIdAndStatusAndDeletedAtIsNull(Long id, WorkPlaceStatus status);
 }

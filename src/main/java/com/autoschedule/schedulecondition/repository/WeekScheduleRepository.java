@@ -26,4 +26,9 @@ public interface WeekScheduleRepository extends JpaRepository<WeekSchedule, Long
             String weekScheduleName,
             WeekScheduleStatus status
     );
+
+    /**
+     *  스케줄 조건이 존재하는지 조회한다.
+     */
+    Optional<WeekSchedule> findByIdAndStatusAndDeletedAtIsNull(Long weekScheduleId, WeekScheduleStatus status);
 }
