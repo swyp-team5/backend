@@ -1,4 +1,4 @@
-﻿CREATE TABLE member (
+CREATE TABLE member (
     member_id BIGINT NOT NULL AUTO_INCREMENT,
     social_provider VARCHAR(20) NOT NULL,
     social_subject VARCHAR(255) NOT NULL,
@@ -452,7 +452,7 @@ CREATE TABLE `time_detail` (
     CONSTRAINT `chk_time_detail_worker_count`
         CHECK (`worker_count` >= 1),
 
-	CONSTRAINT `uk_time_detail_day_member_part`
+	CONSTRAINT `uk_time_detail_day_work_part_no`
     UNIQUE (`day_id`, `work_part_no`)
 ) ENGINE=InnoDB 
 DEFAULT CHARSET=utf8mb4 
