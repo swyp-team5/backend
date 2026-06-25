@@ -1,4 +1,8 @@
-package com.autoschedule.member.service;
+package com.autoschedule.member.repository;
+
+import com.autoschedule.member.dto.ProfileImageObjectMetadata;
+import com.autoschedule.member.dto.ProfileImageUploadTarget;
+import com.autoschedule.member.dto.ProfileImageUploadUrl;
 
 /**
  * 프로필 이미지 실제 저장소와 통신하는 책임을 추상화한다.
