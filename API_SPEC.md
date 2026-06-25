@@ -2475,8 +2475,6 @@ idx_profile_image_member_status_deleted (member_id, status, deleted_at)
 
 스케줄 조건 생성 시 `week_schedule`, `day`, `time_detail` 테이블에 값이 저장된다.
 
-`time_detail.memberId`는 초기에는 `null`로 저장되며, 이후 근무자들이 불가능 일정을 제출하고 자동 스케줄링이 완료되면 배정된 근무자의 `memberId`로 갱신된다.
-
 ---
 
 ### Request
@@ -2806,7 +2804,7 @@ select_limit_status
 | workerCount | Integer | Y | 해당 타임에 필요한 근무자 수 |
 | startTime | String | Y | 근무 시작 시간 |
 | closeTime | String | Y | 근무 종료 시간 |
-| restMinutes | Integer | Y | 휴게 시간. 분 단위 |
+| restTime | Integer | Y | 휴게 시간. 분 단위 |
 
 ---
 
@@ -3059,7 +3057,7 @@ HTTP/1.1 404 Not Found
 | 항목 | 내용 |
 | --- | --- |
 | Method | GET |
-| URL | `/api/week-schedules/{weekScheduleId}/days/{date}/time-details` |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details` |
 | 설명 | 특정 일자의 근무 타임 상세 정보를 조회한다. |
 | 권한 | 인증된 사용자 (해당 사업장 소속 크루원 또는 사장) |
 
