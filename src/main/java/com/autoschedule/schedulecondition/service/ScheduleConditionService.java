@@ -346,34 +346,41 @@ public class ScheduleConditionService {
      */
     private void validateDayCondition(DayCreateRequest dayRequest, WeekScheduleCreateRequest weekRequest) {
 
-        if(dayRequest.groupingId()==null){
-            return;
-        } else {
-            int expectedTimeDetailCount = dayRequest.workChangeCount() + 1;
-
-            if (dayRequest.timeDetails().size() != expectedTimeDetailCount) {
-                throw new ApiException(
-                        ErrorCode.VALIDATION_FAILED,
-                        "근무 교대 횟수와 타임별 상세 정보 개수가 일치하지 않습니다."
-                );
-            }
-
-            if (!weekRequest.workPlaceOpenTime().isBefore(weekRequest.workPlaceCloseTime())) {
-                throw new ApiException(
-                        ErrorCode.VALIDATION_FAILED,
-                        "가게 오픈 시간은 마감 시간보다 빨라야 합니다."
-                );
-            }
-
-            if (weekRequest.minPersonalWorkCount() > weekRequest.maxPersonalWorkCount()) {
-                throw new ApiException(
-                        ErrorCode.VALIDATION_FAILED,
-                        "최소 근무 횟수는 최대 근무 횟수보다 클 수 없습니다."
-                );
-            }
-
-            validateTimeDetails(dayRequest, weekRequest);
+        // weekRequest 수준 검증 — groupingId 여부와 무관하게 항상 실행
+        if (!weekRequest.workPlaceOpenTime().isBefore(weekRequest.workPlaceCloseTime())) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "가게 오픈 시간은 마감 시간보다 빨라야 합니다."
+            );
         }
+
+        if (weekRequest.minPersonalWorkCount() > weekRequest.maxPersonalWorkCount()) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "최소 근무 횟수는 최대 근무 횟수보다 클 수 없습니다."
+            );
+        }
+
+        if (dayRequest.groupingId() == null) {
+            // 휴일: 타임 상세 정보가 없어야 함
+            if (dayRequest.timeDetails() != null && !dayRequest.timeDetails().isEmpty()) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "그룹이 없는 날(휴일)에는 타임 상세 정보를 입력할 수 없습니다."
+                );
+            }
+            return;
+        }
+
+        int expectedTimeDetailCount = dayRequest.workChangeCount() + 1;
+        if (dayRequest.timeDetails().size() != expectedTimeDetailCount) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "근무 교대 횟수와 타임별 상세 정보 개수가 일치하지 않습니다."
+            );
+        }
+
+        validateTimeDetails(dayRequest, weekRequest);
     }
 
     /**
