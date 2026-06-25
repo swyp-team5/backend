@@ -528,10 +528,11 @@ public class ScheduleConditionService {
 
         LocalDate nextMonday = date.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
 
+        int year = nextMonday.getYear(); // 년도를 추가해서 다른 년도의 동일한 주차 이름 중복을 피하기 위함
         int month = nextMonday.getMonthValue();
         int weekOfMonth = nextMonday.get(WeekFields.of(Locale.KOREA).weekOfMonth());
 
-        return month + "월 " + weekOfMonth + "주차";
+        return year + "년 " + month + "월 " + weekOfMonth + "주차";
     }
 
     /**
