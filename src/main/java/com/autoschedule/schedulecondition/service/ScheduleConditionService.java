@@ -53,7 +53,12 @@ public class ScheduleConditionService {
 
         validateScheduleCondition(request); // 요청값들에 대해서 검증 코드
 
-        LocalDate today = LocalDate.now(); // 오늘 일자를 기준으로 다음주 일자를 가져오는 코드
+        LocalDate today = LocalDate.now(); // 오늘 일자를 가져오는 코드
+
+        // 다음 주 시작일 전날(일요일)을 최대 마감일로 제한
+        LocalDate nextMonday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate maxDueDate = nextMonday.minusDays(1);
+        LocalDate dueDate = today.plusDays(3).isAfter(maxDueDate) ? maxDueDate : today.plusDays(3);
 
         validateNextWeekScheduleNotDuplicated(workPlace.getId(), today);
 
@@ -62,7 +67,7 @@ public class ScheduleConditionService {
                 WeekSchedule.create(
                         workPlace, // 사업장 id
                         createNextWeekScheduleName(today), // 오늘 일자를 기준으로 다음주 일자에 대한 '0월 0주차' 형태로 변형해서 저장시킴
-                        today.plusDays(3), // 오늘 일자에서 3일을 더한 일자를 마감일로 정한다
+                        dueDate,   // today.plusDays(3) 대신 계산된 dueDate 사용
                         request.workPlaceOpenTime(),
                         request.workPlaceCloseTime(),
                         request.minPersonalWorkCount(),
@@ -238,19 +243,31 @@ public class ScheduleConditionService {
     /**
      * 요일 조건 목록을 groupingId 기준으로 묶어 응답으로 변환한다.
      */
-    private List<ScheduleConditionGroupResponse> createGroupResponses(
-            List<Day> days
-    ) {
-        return days.stream()
+    private List<ScheduleConditionGroupResponse> createGroupResponses(List<Day> days) {
+        Map<Integer, List<Day>> groupedDays = days.stream()
                 .filter(day -> day.getGroupingId() != null)
-                .collect(Collectors.groupingBy(Day::getGroupingId))
-                .entrySet()
+                .collect(Collectors.groupingBy(Day::getGroupingId));
+
+        // 각 그룹의 대표 Day (날짜 가장 빠른 것) ID 목록
+        List<Long> representativeDayIds = groupedDays.values().stream()
+                .map(groupDayList -> groupDayList.stream()
+                        .min(Comparator.comparing(Day::getDate))
+                        .orElseThrow())
+                .map(Day::getId)
+                .toList();
+
+        // IN 쿼리 1번으로 전체 조회 후 dayId별로 그룹핑
+        Map<Long, List<TimeDetail>> timeDetailsByDayId = timeDetailRepository
+                .findByDay_IdInAndStatusAndDeletedAtIsNullOrderByWorkPartNoAsc(
+                        representativeDayIds,
+                        TimeDetailStatus.ACTIVE
+                )
                 .stream()
+                .collect(Collectors.groupingBy(td -> td.getDay().getId()));
+
+        return groupedDays.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(entry -> createGroupResponse(
-                        entry.getKey(),
-                        entry.getValue()
-                ))
+                .map(entry -> createGroupResponse(entry.getKey(), entry.getValue(), timeDetailsByDayId))
                 .toList();
     }
 
@@ -259,7 +276,8 @@ public class ScheduleConditionService {
      */
     private ScheduleConditionGroupResponse createGroupResponse(
             Integer groupingId,
-            List<Day> groupedDays
+            List<Day> groupedDays,
+            Map<Long, List<TimeDetail>> timeDetailsByDayId
     ) {
         Day representativeDay = groupedDays.stream()
                 .min(Comparator.comparing(Day::getDate))
@@ -267,11 +285,10 @@ public class ScheduleConditionService {
 
         WeekSchedule weekSchedule = representativeDay.getWeekSchedule();
 
-        List<TimeDetail> timeDetails = timeDetailRepository
-                .findByDay_IdAndStatusAndDeletedAtIsNullOrderByWorkPartNoAsc(
-                        representativeDay.getId(),
-                        TimeDetailStatus.ACTIVE
-                );
+        List<TimeDetail> timeDetails = timeDetailsByDayId.getOrDefault(
+                representativeDay.getId(),
+                List.of()
+        );
 
         return ScheduleConditionGroupResponse.from(
                 groupingId,
@@ -337,6 +354,59 @@ public class ScheduleConditionService {
                         ErrorCode.VALIDATION_FAILED,
                         "같은 그룹 안에 동일한 요일이 중복될 수 없습니다."
                 );
+            }
+        }
+        validateSameGroupConditions(request.days());
+    }
+
+    /**
+     *  스케줄 조건 같은 그룹내 일자들 이모두 같은 값을 갖는지 검증 메서드
+     */
+    private void validateSameGroupConditions(List<DayCreateRequest> days) {
+        Map<Integer, List<DayCreateRequest>> groupedDays = days.stream()
+                .filter(d -> d.groupingId() != null)
+                .collect(Collectors.groupingBy(DayCreateRequest::groupingId));
+
+        for (List<DayCreateRequest> groupDays : groupedDays.values()) {
+            DayCreateRequest first = groupDays.get(0);
+
+            List<TimeDetailCreateRequest> firstDetails = first.timeDetails().stream()
+                    .sorted(Comparator.comparingInt(TimeDetailCreateRequest::workPartNo))
+                    .toList();
+
+            for (DayCreateRequest other : groupDays) {
+                if (!Objects.equals(first.workChangeCount(), other.workChangeCount())) {
+                    throw new ApiException(
+                            ErrorCode.VALIDATION_FAILED,
+                            "같은 그룹 내 모든 요일의 workChangeCount가 동일해야 합니다."
+                    );
+                }
+
+                List<TimeDetailCreateRequest> otherDetails = other.timeDetails().stream()
+                        .sorted(Comparator.comparingInt(TimeDetailCreateRequest::workPartNo))
+                        .toList();
+
+                if (firstDetails.size() != otherDetails.size()) {
+                    throw new ApiException(
+                            ErrorCode.VALIDATION_FAILED,
+                            "같은 그룹 내 모든 요일의 타임 개수가 동일해야 합니다."
+                    );
+                }
+
+                for (int i = 0; i < firstDetails.size(); i++) {
+                    TimeDetailCreateRequest fd = firstDetails.get(i);
+                    TimeDetailCreateRequest od = otherDetails.get(i);
+                    if (!Objects.equals(fd.workPartNo(), od.workPartNo())
+                            || !Objects.equals(fd.startTime(), od.startTime())
+                            || !Objects.equals(fd.closeTime(), od.closeTime())
+                            || !Objects.equals(fd.workerCount(), od.workerCount())
+                            || !Objects.equals(fd.restTime(), od.restTime())) {
+                        throw new ApiException(
+                                ErrorCode.VALIDATION_FAILED,
+                                "같은 그룹 내 모든 요일의 타임 상세 조건(파트번호, 시작/종료 시간, 필요 인원, 휴게 시간)이 동일해야 합니다."
+                        );
+                    }
+                }
             }
         }
     }
@@ -412,7 +482,26 @@ public class ScheduleConditionService {
                 );
             }
         }
+
+        // 교대 시간 겹침 검증
+        List<TimeDetailCreateRequest> sorted = dayRequest.timeDetails().stream()
+                .sorted(Comparator.comparing(TimeDetailCreateRequest::startTime))
+                .toList();
+
+        for (int i = 0; i < sorted.size() - 1; i++) {
+            TimeDetailCreateRequest current = sorted.get(i);
+            TimeDetailCreateRequest next = sorted.get(i + 1);
+
+            if (!current.closeTime().isBefore(next.startTime())) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "교대 시간이 겹칩니다. (" + current.startTime() + "~" + current.closeTime()
+                                + " / " + next.startTime() + "~" + next.closeTime() + ")"
+                );
+            }
+        }
     }
+
     /**
      *  오늘 기준 다음 주의 스케줄 조건이 존재하는지 확인하는 메서드
      */
