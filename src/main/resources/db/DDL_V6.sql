@@ -405,7 +405,7 @@ CREATE TABLE `day` (
     `dayname` VARCHAR(20) NOT NULL,
     `date` DATE NOT NULL,
     `grouping_id` INT NULL,
-    `work_change_count` INT NULL DEFAULT 0,
+    `work_change_count` INT NOT NULL DEFAULT 0,
     `holiday_status` TINYINT(1) NOT NULL DEFAULT 0,
     `select_limit_status` TINYINT(1) NOT NULL DEFAULT 0,
     `status` VARCHAR(20) NOT NULL,
