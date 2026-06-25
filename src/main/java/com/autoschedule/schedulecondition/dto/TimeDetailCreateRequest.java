@@ -12,14 +12,14 @@ public record TimeDetailCreateRequest(
 
         @NotNull(message = "근무 파트 번호는 필수입니다.")
         @Min(value = 1, message = "근무 파트 번호는 1 이상이어야 합니다.")
-        Long workPartNo,
+        Integer workPartNo,
 
         @Size(max = 20, message = "타임 이름은 20자 이하여야 합니다.")
         String timeName,
 
         @NotNull(message = "필요 근무자 수는 필수입니다.")
         @Min(value = 1, message = "필요 근무자 수는 1 이상이어야 합니다.")
-        Long workerCount,
+        Integer workerCount,
 
         @NotNull(message = "근무 시작 시간은 필수입니다.")
         LocalTime startTime,

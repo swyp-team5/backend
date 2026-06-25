@@ -27,13 +27,13 @@ public class TimeDetail extends BaseEntity {
     private Day day;
 
     @Column(name = "work_part_no", nullable = false)
-    private Long workPartNo;
+    private Integer workPartNo;
 
     @Column(name = "time_name", length = 20)
     private String timeName;
 
     @Column(name = "worker_count", nullable = false)
-    private Long workerCount;
+    private Integer workerCount;
 
     @Column(name = "start_time", nullable = false)
     private LocalTime startTime;
@@ -56,9 +56,9 @@ public class TimeDetail extends BaseEntity {
      */
     public static TimeDetail create(
             Day day,
-            Long workPartNo,
+            Integer workPartNo,
             String timeName,
-            Long workerCount,
+            Integer workerCount,
             LocalTime startTime,
             LocalTime closeTime,
             Integer restTime

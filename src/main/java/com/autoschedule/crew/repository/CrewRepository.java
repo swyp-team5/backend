@@ -37,6 +37,15 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
     );
 
     /**
+     * 특정 사업장에 특정 상태로 등록된 크루 목록을 조회한다. -> 불가능 일자 제출한 근무자 목록 뽑을때 필요.
+     */
+    List<Crew> findByWorkPlace_IdAndCrewRoleAndStatus(
+            Long workPlaceId,
+            CrewRole crewRole,
+            CrewStatus status
+    );
+
+    /**
      * 특정 사업장에 승인되고 활성화된 역할별 크루 회원 ID를 조회한다.
      */
     @Query("""

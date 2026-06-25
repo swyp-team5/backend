@@ -11,7 +11,7 @@ public record TimeDetailSummaryResponse(
         String timeName,
         LocalTime startTime,
         LocalTime closeTime,
-        Long workerCount
+        Integer workerCount
 ) {
 
     /**

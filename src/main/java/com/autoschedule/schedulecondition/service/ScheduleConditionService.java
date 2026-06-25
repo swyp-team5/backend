@@ -1,5 +1,7 @@
 package com.autoschedule.schedulecondition.service;
 
+import com.autoschedule.crew.domain.CrewStatus;
+import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
@@ -35,6 +37,7 @@ public class ScheduleConditionService {
     private final WeekScheduleRepository weekScheduleRepository;
     private final DayRepository dayRepository;
     private final TimeDetailRepository timeDetailRepository;
+    private final CrewRepository crewRepository;
 
     /**
      * 사장이 선택한 스케줄 조건을 저장한다.
@@ -147,6 +150,11 @@ public class ScheduleConditionService {
     ) {
         findActiveMember(memberId);
 
+        validateCrewMember(
+                workPlaceId,
+                memberId
+        );
+
         WeekSchedule weekSchedule = weekScheduleRepository
                 .findFirstByWorkPlace_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
                         workPlaceId,
@@ -181,10 +189,16 @@ public class ScheduleConditionService {
     @Transactional(readOnly = true)
     public DayTimeDetailResponse getDayTimeDetails(
             Long memberId,
+            Long workPlaceId,
             Long weekScheduleId,
             LocalDate date
     ) {
         findActiveMember(memberId);
+
+        validateCrewMember(
+                workPlaceId,
+                memberId
+        );
 
         Day day = dayRepository
                 .findByWeekSchedule_IdAndDateAndStatusAndDeletedAtIsNull(
@@ -326,7 +340,7 @@ public class ScheduleConditionService {
      *  일자별 시간별 근무 상세조건 검증 메서드
      */
     private void validateTimeDetails(DayCreateRequest dayRequest, WeekScheduleCreateRequest weekRequest) {
-        Set<Long> workPartNumbers = new HashSet<>();
+        Set<Integer> workPartNumbers = new HashSet<>();
 
         for (TimeDetailCreateRequest timeDetailRequest : dayRequest.timeDetails()) {
             if (!workPartNumbers.add(timeDetailRequest.workPartNo())) {
@@ -390,6 +404,24 @@ public class ScheduleConditionService {
     private Member findActiveMember(Long memberId) {
         return memberRepository.findActiveById(memberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
+    }
+
+    /**
+     * 로그인 회원이 해당 사업장의 크루원인지 확인한다.
+     */
+    private void validateCrewMember(
+            Long workPlaceId,
+            Long memberId
+    ) {
+        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndStatus(
+                memberId,
+                workPlaceId,
+                CrewStatus.ACTIVE
+        );
+
+        if (!exists) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "이 회원은 해당 사업장의 크루원이 아닙니다.");
+        }
     }
 
     /**
