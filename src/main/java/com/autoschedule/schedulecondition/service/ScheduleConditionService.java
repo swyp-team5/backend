@@ -168,7 +168,7 @@ public class ScheduleConditionService {
 
         WeekSchedule weekSchedule = weekScheduleRepository
                 .findFirstByWorkPlace_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
-                        workPlaceId,
+                        workPlace.getId(),
                         WeekScheduleStatus.ACTIVE
                 )
                 .orElseThrow(() -> new ApiException(
@@ -215,7 +215,11 @@ public class ScheduleConditionService {
                 memberId
         );
 
-        WeekSchedule weekSchedule = weekScheduleRepository.findByIdAndStatusAndDeletedAtIsNull(weekScheduleId,WeekScheduleStatus.ACTIVE)
+        WeekSchedule weekSchedule = weekScheduleRepository.findByIdAndWorkPlaceIdAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(),
+                        weekScheduleId,
+                        WeekScheduleStatus.ACTIVE
+                )
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주차의 스케줄 조건을 찾을 수 없습니다."));
 
         Day day = dayRepository
