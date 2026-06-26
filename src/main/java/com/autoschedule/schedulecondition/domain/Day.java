@@ -29,7 +29,7 @@ public class Day extends BaseEntity {
     private WeekSchedule weekSchedule;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "dayname", nullable = false, length = 20)
+    @Column(name = "day_name", nullable = false, length = 20)
     private ScheduleDayName dayName;
 
     @Column(name = "date", nullable = false)

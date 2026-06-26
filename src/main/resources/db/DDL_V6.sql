@@ -402,7 +402,7 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `day` (
     `day_id` BIGINT NOT NULL AUTO_INCREMENT,
     `week_schedule_id` BIGINT NOT NULL,
-    `dayname` VARCHAR(20) NOT NULL,
+    `day_name` VARCHAR(20) NOT NULL,
     `date` DATE NOT NULL,
     `grouping_id` INT NULL,
     `work_change_count` INT NOT NULL DEFAULT 0,
