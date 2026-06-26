@@ -1,4 +1,5 @@
 .git
+.gitignore
 .gradle
 .idea
 build
@@ -22,9 +23,21 @@ docker-compose.prod.yml
 *service-account*.json
 *firebase*.json
 *google-credentials*.json
+*aws-credentials*
 credentials.json
+
 *.p8
 *.pem
 *.key
+*.crt
+*.cer
+*.csr
+*.p12
+*.pfx
 *.jks
 *.keystore
+
+
+# IntelliJ 설정 파일
+*.run.xml
+.run/

@@ -155,6 +155,8 @@ docker-compose.prod.yml
 *.iws
 *.iml
 *.ipr
+*.run.xml
+.run/
 
 
 # =========================================================
@@ -224,5 +226,3 @@ test-results/
 
 # Docs
 docs/
-
-.run/
