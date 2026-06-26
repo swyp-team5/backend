@@ -5,6 +5,7 @@ import com.autoschedule.crew.domain.CrewJoinStatus;
 import com.autoschedule.crew.domain.CrewRole;
 import com.autoschedule.crew.domain.CrewStatus;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +19,11 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
      * 특정 회원이 특정 사업장에 특정 상태의 크루로 등록되어 있는지 확인한다.
      */
     boolean existsByMember_IdAndWorkPlace_IdAndStatus(Long memberId, Long workPlaceId, CrewStatus status);
+
+    /**
+     * 동일 회원과 사업장 사이에 남아 있는 크루 이력을 조회한다.
+     */
+    Optional<Crew> findByMember_IdAndWorkPlace_Id(Long memberId, Long workPlaceId);
 
     /**
      * 일반 사용자 API에서 사용할 활성 크루 소속 존재 여부 확인 메서드다.

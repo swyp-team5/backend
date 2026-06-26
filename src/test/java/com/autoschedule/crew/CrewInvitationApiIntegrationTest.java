@@ -677,11 +677,6 @@ class CrewInvitationApiIntegrationTest {
      * 외래키 순서를 고려해 테스트 DB 데이터를 직접 비운다.
      */
     private void cleanupDatabase() {
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
-        jdbcTemplate.update("DELETE FROM crew_invitation");
-        jdbcTemplate.update("DELETE FROM crew");
-        jdbcTemplate.update("DELETE FROM work_place");
-        jdbcTemplate.update("DELETE FROM member");
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
+        com.autoschedule.support.TestDatabaseCleaner.clean(jdbcTemplate);
     }
 }

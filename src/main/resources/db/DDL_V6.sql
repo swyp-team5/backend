@@ -393,11 +393,14 @@ CREATE TABLE `week_schedule` (
     CONSTRAINT `fk_week_schedule_work_place`
         FOREIGN KEY (`work_place_id`) REFERENCES `work_place` (`work_place_id`),
 
-	CONSTRAINT `uk_week_schedule_work_place_name`
-        UNIQUE (`work_place_id`, `week_schedule_name`)	
-) ENGINE=InnoDB 
-DEFAULT CHARSET=utf8mb4 
+    CONSTRAINT `uk_week_schedule_work_place_name`
+        UNIQUE (`work_place_id`, `week_schedule_name`)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX `idx_week_schedule_work_place_status_deleted_created`
+    ON `week_schedule` (`work_place_id`, `status`, `deleted_at`, `created_at`, `week_schedule_id`);
 
 CREATE TABLE `day` (
     `day_id` BIGINT NOT NULL AUTO_INCREMENT,
@@ -424,11 +427,14 @@ CREATE TABLE `day` (
     CONSTRAINT `chk_day_select_limit_status`
         CHECK (`select_limit_status` IN (0, 1)),
 
-	CONSTRAINT `uk_day_week_schedule_day_name_date`
+    CONSTRAINT `uk_day_week_schedule_day_name_date`
         UNIQUE (`week_schedule_id`, `day_name`, `date`)
-) ENGINE=InnoDB 
-DEFAULT CHARSET=utf8mb4 
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX `idx_day_week_schedule_status_deleted_date`
+    ON `day` (`week_schedule_id`, `status`, `deleted_at`, `date`, `day_id`);
 
 CREATE TABLE `time_detail` (
     `time_detail_id` BIGINT NOT NULL AUTO_INCREMENT,
@@ -452,8 +458,11 @@ CREATE TABLE `time_detail` (
     CONSTRAINT `chk_time_detail_worker_count`
         CHECK (`worker_count` >= 1),
 
-	CONSTRAINT `uk_time_detail_day_work_part_no`
+    CONSTRAINT `uk_time_detail_day_work_part_no`
     UNIQUE (`day_id`, `work_part_no`)
-) ENGINE=InnoDB 
-DEFAULT CHARSET=utf8mb4 
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX `idx_time_detail_day_status_deleted_work_part`
+    ON `time_detail` (`day_id`, `status`, `deleted_at`, `work_part_no`);

@@ -650,12 +650,6 @@ class AuthApiIntegrationTest {
      * 테스트 간 DB 상태가 섞이지 않도록 관련 테이블을 직접 비운다.
      */
     private void cleanupDatabase() {
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
-        jdbcTemplate.update("DELETE FROM member_terms_agreement");
-        jdbcTemplate.update("DELETE FROM crew");
-        jdbcTemplate.update("DELETE FROM work_place");
-        jdbcTemplate.update("DELETE FROM member");
-        jdbcTemplate.update("DELETE FROM terms");
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
+        com.autoschedule.support.TestDatabaseCleaner.clean(jdbcTemplate);
     }
 }

@@ -140,6 +140,32 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
+     * 그룹이 없는 휴일은 timeDetails 필드를 생략해도 스케줄 조건 생성에 성공한다.
+     */
+    @Test
+    void createScheduleCondition_succeedsWhenUngroupedHolidayOmitsTimeDetails() throws Exception {
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithOmittedHolidayTimeDetails()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    /**
+     * 그룹이 있는 영업일은 timeDetails 필드가 없으면 400으로 거절한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenGroupedDayOmitsTimeDetails() throws Exception {
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithOmittedGroupedDayTimeDetails()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
      * 스케줄 조건 생성 후 WeekSchedule 테이블에
      * workPlaceOpenTime, workPlaceCloseTime, minPersonalWorkCount, maxPersonalWorkCount가 저장된다.
      */
@@ -471,9 +497,10 @@ class ScheduleConApiIntegrationTest {
     void createScheduleCondition_failsWhenNextWeekScheduleAlreadyExists() throws Exception {
         // 다음주 주차 이름을 서비스와 동일한 로직으로 계산
         LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        int year = nextMonday.getYear();
         int month = nextMonday.getMonthValue();
         int weekOfMonth = nextMonday.get(java.time.temporal.WeekFields.of(java.util.Locale.KOREA).weekOfMonth());
-        String nextWeekName = month + "월 " + weekOfMonth + "주차";
+        String nextWeekName = year + "년 " + month + "월 " + weekOfMonth + "주차";
 
         // 이미 같은 주차 스케줄 조건이 존재하는 상태를 만든다
         weekScheduleRepository.save(WeekSchedule.create(
@@ -966,7 +993,7 @@ class ScheduleConApiIntegrationTest {
         latch.await(10, TimeUnit.SECONDS);
         executor.shutdown();
 
-        assertThat(statuses).containsExactlyInAnyOrder(201, 500);
+        assertThat(statuses).containsExactlyInAnyOrder(201, 409);
     }
 
     // ─────────────────────────────────────────────
@@ -1172,6 +1199,84 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
+     * 그룹이 없는 일요일 휴일의 timeDetails 필드를 생략한 정상 요청 JSON을 반환한다.
+     */
+    private String buildRequestWithOmittedHolidayTimeDetails() {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        return """
+                {
+                  "workPlaceOpenTime": "09:00:00",
+                  "workPlaceCloseTime": "22:00:00",
+                  "minPersonalWorkCount": 1,
+                  "maxPersonalWorkCount": 5,
+                  "days": [
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    {
+                      "dayName": "SUNDAY",
+                      "date": "%s",
+                      "groupingId": null,
+                      "workChangeCount": 0,
+                      "holidayStatus": true,
+                      "selectLimitStatus": true
+                    }
+                  ]
+                }
+                """.formatted(
+                buildDayJson("MONDAY", nextMonday, 1, 0),
+                buildDayJson("TUESDAY", nextMonday.plusDays(1), 1, 0),
+                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                buildDayJson("THURSDAY", nextMonday.plusDays(3), 1, 0),
+                buildDayJson("FRIDAY", nextMonday.plusDays(4), 2, 0),
+                buildDayJson("SATURDAY", nextMonday.plusDays(5), 2, 0),
+                nextMonday.plusDays(6)
+        );
+    }
+
+    /**
+     * 그룹이 있는 월요일 영업일의 timeDetails 필드를 생략한 비정상 요청 JSON을 반환한다.
+     */
+    private String buildRequestWithOmittedGroupedDayTimeDetails() {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        return """
+                {
+                  "workPlaceOpenTime": "09:00:00",
+                  "workPlaceCloseTime": "22:00:00",
+                  "minPersonalWorkCount": 1,
+                  "maxPersonalWorkCount": 5,
+                  "days": [
+                    {
+                      "dayName": "MONDAY",
+                      "date": "%s",
+                      "groupingId": 1,
+                      "workChangeCount": 0,
+                      "holidayStatus": false,
+                      "selectLimitStatus": false
+                    },
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                  ]
+                }
+                """.formatted(
+                nextMonday,
+                buildDayJson("TUESDAY", nextMonday.plusDays(1), 1, 0),
+                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                buildDayJson("THURSDAY", nextMonday.plusDays(3), 1, 0),
+                buildDayJson("FRIDAY", nextMonday.plusDays(4), 2, 0),
+                buildDayJson("SATURDAY", nextMonday.plusDays(5), 2, 0),
+                buildSundayDayJson()
+        );
+    }
+
+    /**
      * groupingId가 있는 요일 1개(workChangeCount=0, timeDetail 1개)의 JSON 조각을 반환한다.
      */
     private String buildDayJson(String dayName, LocalDate date, int groupingId, int workChangeCount) {
@@ -1247,13 +1352,6 @@ class ScheduleConApiIntegrationTest {
      * 테스트 격리를 위해 스케줄 관련 테이블을 참조 순서에 맞게 삭제한다.
      */
     private void cleanupDatabase() {
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
-        jdbcTemplate.update("delete from time_detail");
-        jdbcTemplate.update("delete from day");
-        jdbcTemplate.update("delete from week_schedule");
-        jdbcTemplate.update("delete from crew");
-        jdbcTemplate.update("delete from work_place");
-        jdbcTemplate.update("delete from member");
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
+        com.autoschedule.support.TestDatabaseCleaner.clean(jdbcTemplate);
     }
 }

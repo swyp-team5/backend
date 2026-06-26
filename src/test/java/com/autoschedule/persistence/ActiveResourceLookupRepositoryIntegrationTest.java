@@ -210,36 +210,7 @@ class ActiveResourceLookupRepositoryIntegrationTest {
      * 테스트 DB 데이터를 참조 역순으로 삭제한다.
      */
     private void cleanupDatabase() {
-        if (tableExists("notification_delivery")) {
-            jdbcTemplate.update("delete from notification_delivery");
-        }
-        if (tableExists("notification")) {
-            jdbcTemplate.update("delete from notification");
-        }
-        if (tableExists("fcm_token")) {
-            jdbcTemplate.update("delete from fcm_token");
-        }
-        if (tableExists("notice_comment")) {
-            jdbcTemplate.update("delete from notice_comment");
-        }
-        if (tableExists("notice")) {
-            jdbcTemplate.update("delete from notice");
-        }
-        if (tableExists("crew_invitation")) {
-            jdbcTemplate.update("delete from crew_invitation");
-        }
-        if (tableExists("crew")) {
-            jdbcTemplate.update("delete from crew");
-        }
-        if (tableExists("member_terms_agreement")) {
-            jdbcTemplate.update("delete from member_terms_agreement");
-        }
-        if (tableExists("work_place")) {
-            jdbcTemplate.update("delete from work_place");
-        }
-        if (tableExists("member")) {
-            jdbcTemplate.update("delete from member");
-        }
+        com.autoschedule.support.TestDatabaseCleaner.clean(jdbcTemplate);
     }
 
     /**

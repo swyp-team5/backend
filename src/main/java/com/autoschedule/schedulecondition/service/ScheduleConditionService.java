@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,50 +65,56 @@ public class ScheduleConditionService {
 
         validateNextWeekScheduleNotDuplicated(workPlace.getId(), today);
 
-        // creat() -> 엔티티를 만듬 / save() -> DB에 자징함
-        WeekSchedule weekSchedule = weekScheduleRepository.save(
-                WeekSchedule.create(
-                        workPlace, // 사업장 id
-                        createNextWeekScheduleName(today), // 오늘 일자를 기준으로 다음주 일자에 대한 '0월 0주차' 형태로 변형해서 저장시킴
-                        dueDate,   // today.plusDays(3) 대신 계산된 dueDate 사용
-                        request.workPlaceOpenTime(),
-                        request.workPlaceCloseTime(),
-                        request.minPersonalWorkCount(),
-                        request.maxPersonalWorkCount()
-                )
-        );
-
-        // 요일별 저장되는 정보를 for문을 통해서 저장시킴
-        for (DayCreateRequest dayRequest : request.days()) {
-            Day day = dayRepository.save(
-                    Day.create(
-                            weekSchedule,
-                            dayRequest.dayName(),
-                            dayRequest.date(),
-                            dayRequest.groupingId(),
-                            dayRequest.workChangeCount(),
-                            dayRequest.holidayStatus(),
-                            dayRequest.selectLimitStatus()
+        try {
+            // creat() -> 엔티티를 만듬 / save() -> DB에 자징함
+            WeekSchedule weekSchedule = weekScheduleRepository.save(
+                    WeekSchedule.create(
+                            workPlace, // 사업장 id
+                            createNextWeekScheduleName(today), // 오늘 일자를 기준으로 다음주 일자에 대한 '0월 0주차' 형태로 변형해서 저장시킴
+                            dueDate,   // today.plusDays(3) 대신 계산된 dueDate 사용
+                            request.workPlaceOpenTime(),
+                            request.workPlaceCloseTime(),
+                            request.minPersonalWorkCount(),
+                            request.maxPersonalWorkCount()
                     )
             );
 
-            // 요일별 시간별 근무 상세조건 정보를 for문을 통해 저장시킴
-            for (TimeDetailCreateRequest timeDetailRequest : dayRequest.timeDetails()) {
-                timeDetailRepository.save(
-                        TimeDetail.create(
-                                day,
-                                timeDetailRequest.workPartNo(),
-                                timeDetailRequest.timeName(),
-                                timeDetailRequest.workerCount(),
-                                timeDetailRequest.startTime(),
-                                timeDetailRequest.closeTime(),
-                                timeDetailRequest.restTime()
+            // 요일별 저장되는 정보를 for문을 통해서 저장시킴
+            for (DayCreateRequest dayRequest : request.days()) {
+                Day day = dayRepository.save(
+                        Day.create(
+                                weekSchedule,
+                                dayRequest.dayName(),
+                                dayRequest.date(),
+                                dayRequest.groupingId(),
+                                dayRequest.workChangeCount(),
+                                dayRequest.holidayStatus(),
+                                dayRequest.selectLimitStatus()
                         )
                 );
-            }
-        }
 
-        return WeekScheduleResponse.from(weekSchedule); // 값들을 저장시킨뒤 주간스케줄 정보를 응답값으로 전달함
+                // 요일별 시간별 근무 상세조건 정보를 for문을 통해 저장시킴
+                for (TimeDetailCreateRequest timeDetailRequest : safeTimeDetails(dayRequest)) {
+                    timeDetailRepository.save(
+                            TimeDetail.create(
+                                    day,
+                                    timeDetailRequest.workPartNo(),
+                                    timeDetailRequest.timeName(),
+                                    timeDetailRequest.workerCount(),
+                                    timeDetailRequest.startTime(),
+                                    timeDetailRequest.closeTime(),
+                                    timeDetailRequest.restTime()
+                            )
+                    );
+                }
+            }
+
+            weekScheduleRepository.flush();
+
+            return WeekScheduleResponse.from(weekSchedule); // 값들을 저장시킨뒤 주간스케줄 정보를 응답값으로 전달함
+        } catch (DataIntegrityViolationException exception) {
+            throw new ApiException(ErrorCode.CONFLICT, "이미 생성된 다음 주 스케줄 조건이 있습니다.");
+        }
     }
 
     /**
@@ -464,8 +471,7 @@ public class ScheduleConditionService {
 
         int expectedTimeDetailCount = dayRequest.workChangeCount() + 1;
 
-        if (dayRequest.timeDetails() != null &&
-                dayRequest.timeDetails().size() != expectedTimeDetailCount) {
+        if (dayRequest.timeDetails() == null || dayRequest.timeDetails().size() != expectedTimeDetailCount) {
             throw new ApiException(
                     ErrorCode.VALIDATION_FAILED,
                     "근무 교대 횟수와 타임별 상세 정보 개수가 일치하지 않습니다."
@@ -473,6 +479,13 @@ public class ScheduleConditionService {
         }
 
         validateTimeDetails(dayRequest, weekRequest);
+    }
+
+    /**
+     * timeDetails가 없는 휴일 저장 시 빈 목록으로 취급한다.
+     */
+    private List<TimeDetailCreateRequest> safeTimeDetails(DayCreateRequest dayRequest) {
+        return dayRequest.timeDetails() == null ? List.of() : dayRequest.timeDetails();
     }
 
     /**

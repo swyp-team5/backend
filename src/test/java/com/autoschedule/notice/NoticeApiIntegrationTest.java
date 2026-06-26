@@ -653,17 +653,7 @@ class NoticeApiIntegrationTest {
     }
 
     private void cleanupDatabase() {
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
-        deleteTableIfExists("notification_delivery");
-        deleteTableIfExists("notification");
-        deleteTableIfExists("fcm_token");
-        deleteTableIfExists("notice_comment");
-        deleteTableIfExists("notice");
-        jdbcTemplate.update("DELETE FROM crew_invitation");
-        jdbcTemplate.update("DELETE FROM crew");
-        jdbcTemplate.update("DELETE FROM work_place");
-        jdbcTemplate.update("DELETE FROM member");
-        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
+        com.autoschedule.support.TestDatabaseCleaner.clean(jdbcTemplate);
     }
 
     private void deleteTableIfExists(String tableName) {

@@ -82,4 +82,14 @@ public class Crew extends BaseEntity {
         return crew;
     }
 
+    /**
+     * 비활성 처리된 근무자 소속 이력을 다시 활성 크루로 복구한다.
+     */
+    public void reactivateWorker() {
+        this.joinStatus = CrewJoinStatus.APPROVED;
+        this.crewRole = CrewRole.WORKER;
+        this.status = CrewStatus.ACTIVE;
+        this.deletedAt = null;
+    }
+
 }
