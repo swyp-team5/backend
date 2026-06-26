@@ -216,8 +216,8 @@ public class ScheduleConditionService {
         );
 
         WeekSchedule weekSchedule = weekScheduleRepository.findByIdAndWorkPlaceIdAndStatusAndDeletedAtIsNull(
-                        workPlace.getId(),
                         weekScheduleId,
+                        workPlace.getId(),
                         WeekScheduleStatus.ACTIVE
                 )
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주차의 스케줄 조건을 찾을 수 없습니다."));
