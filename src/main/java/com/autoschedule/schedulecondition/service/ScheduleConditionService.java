@@ -460,7 +460,9 @@ public class ScheduleConditionService {
         }
 
         int expectedTimeDetailCount = dayRequest.workChangeCount() + 1;
-        if (dayRequest.timeDetails().size() != expectedTimeDetailCount) {
+
+        if (dayRequest.timeDetails() != null &&
+                dayRequest.timeDetails().size() != expectedTimeDetailCount) {
             throw new ApiException(
                     ErrorCode.VALIDATION_FAILED,
                     "근무 교대 횟수와 타임별 상세 정보 개수가 일치하지 않습니다."
