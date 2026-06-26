@@ -150,7 +150,10 @@ public class ScheduleConditionService {
 
         List<ScheduleConditionGroupResponse> groups = createGroupResponses(days);
 
-        return WeekScheduleLatestResponse.from(weekSchedule, groups);
+        return WeekScheduleLatestResponse.from(
+                weekSchedule,
+                createNextWeekScheduleName(LocalDate.now()), // 생성할 다음주차 이름을 넘김
+                groups);
     }
 
     /**
