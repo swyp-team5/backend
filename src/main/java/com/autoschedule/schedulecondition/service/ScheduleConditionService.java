@@ -509,7 +509,7 @@ public class ScheduleConditionService {
             TimeDetailCreateRequest current = sorted.get(i);
             TimeDetailCreateRequest next = sorted.get(i + 1);
 
-            if (!current.closeTime().isBefore(next.startTime())) {
+            if (current.closeTime().isAfter(next.startTime())) { // 12:00 종료시간, 12:00 시작시간 겹침 수정
                 throw new ApiException(
                         ErrorCode.VALIDATION_FAILED,
                         "교대 시간이 겹칩니다. (" + current.startTime() + "~" + current.closeTime()
