@@ -3190,7 +3190,8 @@ HTTP/1.1 404 Not Found
 {
   "weekScheduleId": 1,
   "workPlaceId": 10,
-  "weekScheduleName": "6월 넷째 주",
+  "weekScheduleName": "2026년 6월 3주차",
+  "nextWeekScheduleName": "2026년 6월 5주차",
   "dueDate": "2026-06-23",
   "groups": [
     {
@@ -3235,27 +3236,28 @@ HTTP/1.1 404 Not Found
 
 #### Response 필드 설명
 
-| 필드명 | 타입 | 설명 |
-| --- | --- | --- |
-| weekScheduleId | Long | 주간 스케줄 ID |
-| workPlaceId | Long | 사업장 ID |
-| weekScheduleName | String | 주간 스케줄 이름 |
-| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일 |
+| 필드명 | 타입 | 설명                               |
+| --- | --- |----------------------------------|
+| weekScheduleId | Long | 주간 스케줄 ID                        |
+| workPlaceId | Long | 사업장 ID                           |
+| weekScheduleName | String | 조회된 주간 스케줄 이름                    |
+| nextWeekScheduleName | String | 생성할 주간 스케줄 이름                    |
+| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일                |
 | groups | Array | groupingId 기준으로 묶인 요일별 스케줄 조건 목록 |
-| groups[].groupingId | Integer | 요일 그룹 ID |
-| groups[].dayNames | Array | 같은 그룹에 속한 요일 목록 |
-| groups[].workPlaceOpenTime | LocalTime | 해당 그룹의 사업장 오픈 시간 |
-| groups[].workPlaceCloseTime | LocalTime | 해당 그룹의 사업장 마감 시간 |
-| groups[].minPersonalWorkCount | Long | 근무자 1명당 최소 근무 횟수 |
-| groups[].maxPersonalWorkCount | Long | 근무자 1명당 최대 근무 횟수 |
-| groups[].timeDetails | Array | 해당 그룹의 타임별 상세 정보 |
-| groups[].timeDetails[].timeDetailId | Long | 타임 상세 ID |
-| groups[].timeDetails[].workPartNo | Long | 근무 파트 번호 |
-| groups[].timeDetails[].timeName | String | 근무 타임 이름 |
-| groups[].timeDetails[].workerCount | Long | 해당 타임에 필요한 근무자 수 |
-| groups[].timeDetails[].startTime | LocalTime | 근무 시작 시간 |
-| groups[].timeDetails[].closeTime | LocalTime | 근무 종료 시간 |
-| groups[].timeDetails[].restMinutes | Integer | 휴게 시간. 분 단위 |
+| groups[].groupingId | Integer | 요일 그룹 ID                         |
+| groups[].dayNames | Array | 같은 그룹에 속한 요일 목록                  |
+| groups[].workPlaceOpenTime | LocalTime | 해당 그룹의 사업장 오픈 시간                 |
+| groups[].workPlaceCloseTime | LocalTime | 해당 그룹의 사업장 마감 시간                 |
+| groups[].minPersonalWorkCount | Long | 근무자 1명당 최소 근무 횟수                 |
+| groups[].maxPersonalWorkCount | Long | 근무자 1명당 최대 근무 횟수                 |
+| groups[].timeDetails | Array | 해당 그룹의 타임별 상세 정보                 |
+| groups[].timeDetails[].timeDetailId | Long | 타임 상세 ID                         |
+| groups[].timeDetails[].workPartNo | Long | 근무 파트 번호                         |
+| groups[].timeDetails[].timeName | String | 근무 타임 이름                         |
+| groups[].timeDetails[].workerCount | Long | 해당 타임에 필요한 근무자 수                 |
+| groups[].timeDetails[].startTime | LocalTime | 근무 시작 시간                         |
+| groups[].timeDetails[].closeTime | LocalTime | 근무 종료 시간                         |
+| groups[].timeDetails[].restMinutes | Integer | 휴게 시간. 분 단위                      |
 
 ---
 
