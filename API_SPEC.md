@@ -2940,7 +2940,7 @@ HTTP/1.1 404 Not Found
 | Method | GET |
 | URL | `/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate` |
 | 설명 | 가장 최근에 생성된 스케줄 조건의 일자별 선택 가능 상태를 조회한다. |
-| 권한 | 인증된 사용자 (해당 사업장 소속 크루원 또는 사장) |
+| 권한 | WORKER |
 
 ---
 
@@ -3062,7 +3062,7 @@ HTTP/1.1 404 Not Found
 | Method | GET |
 | URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details` |
 | 설명 | 특정 일자의 근무 타임 상세 정보를 조회한다. |
-| 권한 | 인증된 사용자 (해당 사업장 소속 크루원 또는 사장) |
+| 권한 | WORKER |
 
 ---
 

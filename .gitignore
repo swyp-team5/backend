@@ -1,4 +1,3 @@
-```gitignore
 # =========================================================
 # AutoSchedule Backend .gitignore
 # Public repository safe configuration
@@ -222,7 +221,6 @@ test-results/
 *.swo
 *.tmp
 *.temp
-```
 
 # Docs
 docs/

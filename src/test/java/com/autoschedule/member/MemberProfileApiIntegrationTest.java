@@ -137,19 +137,7 @@ class MemberProfileApiIntegrationTest {
      * 테스트 DB 데이터를 참조 순서에 맞춰 제거한다.
      */
     private void cleanupDatabase() {
-        if (tableExists("profile_image")) {
-            jdbcTemplate.update("delete from profile_image");
-        }
-        if (tableExists("notification_delivery")) {
-            jdbcTemplate.update("delete from notification_delivery");
-        }
-        if (tableExists("notification")) {
-            jdbcTemplate.update("delete from notification");
-        }
-        if (tableExists("fcm_token")) {
-            jdbcTemplate.update("delete from fcm_token");
-        }
-        jdbcTemplate.update("delete from member");
+        com.autoschedule.support.TestDatabaseCleaner.clean(jdbcTemplate);
     }
 
     /**

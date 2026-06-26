@@ -96,7 +96,7 @@ public class CrewInvitationService {
         validateInvitationUsable(invitation);
         validateNotAlreadyCrew(worker, invitation.getWorkPlace());
 
-        Crew crew = crewRepository.save(Crew.createWorker(worker, invitation.getWorkPlace()));
+        Crew crew = createOrReactivateWorkerCrew(worker, invitation.getWorkPlace());
         invitation.markUsed(worker, LocalDateTime.now());
         registerAfterCommit(() -> crewInvitationRedisStore.deleteAll(inviteCode));
         return CrewInvitationAcceptResponse.from(crew);
@@ -105,6 +105,18 @@ public class CrewInvitationService {
     /**
      * 사장님이 본인 사업장에서 생성한 초대 코드 발급/사용 이력을 최신순으로 조회한다.
      */
+    /**
+     * 과거 비활성 크루 이력이 있으면 재활성화하고, 없으면 신규 크루를 생성한다.
+     */
+    private Crew createOrReactivateWorkerCrew(Member worker, WorkPlace workPlace) {
+        return crewRepository.findByMember_IdAndWorkPlace_Id(worker.getId(), workPlace.getId())
+                .map(crew -> {
+                    crew.reactivateWorker();
+                    return crew;
+                })
+                .orElseGet(() -> crewRepository.save(Crew.createWorker(worker, workPlace)));
+    }
+
     @Transactional(readOnly = true)
     public CrewInvitationHistoryResponse getInvitationHistory(
             Long ownerMemberId,
