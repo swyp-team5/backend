@@ -1,0 +1,37 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="AutoscheduleApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+    <option name="ACTIVE_PROFILES" value="local" />
+    <envs>
+      <env name="APP_PORT" value="8080" />
+      <env name="APPLE_CLIENT_ID" value="com.example.chackChack" />
+      <env name="APPLE_JWKS_URI" value="https://appleid.apple.com/auth/keys" />
+      <env name="APPLE_KEY_ID" value="애플_KEY_ID" />
+      <env name="APPLE_PRIVATE_KEY" value="애플_PRIVATE_KEY_문자열" />
+      <env name="APPLE_TEAM_ID" value="애플_TEAM_ID" />
+      <env name="APPLE_TOKEN_URI" value="https://appleid.apple.com/auth/token" />
+      <env name="GOOGLE_CLIENT_IDS" value="628121456031-kt9h0v4f6kbujqikighp97lts2i2h1f8.apps.googleusercontent.com,628121456031-ceuo6vna7sttq2lqf9ln522s8ju2lhip.apps.googleusercontent.com,628121456031-3t4n7pd1dnfv1golshci2q9erg4bdgoa.apps.googleusercontent.com" />
+      <env name="JWT_ACCESS_TOKEN_VALIDITY_SECONDS" value="1800" />
+      <env name="JWT_REFRESH_TOKEN_VALIDITY_SECONDS" value="1209600" />
+      <env name="JWT_SECRET" value="chack-chack-local-test-JWT-20260616" />
+      <env name="KAKAO_USER_INFO_URI" value="https://kapi.kakao.com/v2/user/me" />
+      <env name="MYSQL_DATABASE" value="autoschedule" />
+      <env name="MYSQL_PORT" value="23306" />
+      <env name="MYSQL_ROOT_PASSWORD" value="1234" />
+      <env name="REDIS_PORT" value="26379" />
+    </envs>
+    <option name="FRAME_DEACTIVATION_UPDATE_POLICY" value="UnknownPolicyInFreeMode" />
+    <module name="autoschedule.main" />
+    <option name="SHORTEN_COMMAND_LINE" value="ARGS_FILE" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.autoschedule.AutoscheduleApplication" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="com.autoschedule.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

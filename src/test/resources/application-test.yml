@@ -12,12 +12,13 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: validate
     open-in-view: false
 
   sql:
     init:
-      mode: never
+      mode: always
+      schema-locations: classpath:db/DDL_V6.sql
 
 logging:
   level:

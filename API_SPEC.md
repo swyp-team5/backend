@@ -42,6 +42,12 @@
 - 알림 단건 읽음 처리
 - 모든 알림 읽음 처리
 - FCM 테스트 푸시 발송
+- 스케줄 조건 생성
+- 달력 활성화 일자 조회
+- 특정 일자 타임 상세조회
+- 최근 스케줄 조건 조회
+- 근무자 근무불가 시간 선택
+- 근무자 제출 여부 조회
 
 모든 API URL은 `/api/*` 규칙을 따른다. `/api/v1/*` 형식은 사용하지 않는다.
 
@@ -2461,3 +2467,1092 @@ idx_profile_image_member_status_deleted (member_id, status, deleted_at)
 - 버킷 전체 public open은 사용하지 않는다.
 - ACL은 사용하지 않는다.
 - 삭제/검증/URL 발급 권한은 백엔드 IAM principal만 가진다.
+
+## 16. 스케줄 조건 생성 API
+
+### 16-1. 스케줄 조건 생성 API
+
+### API 개요
+
+사장이 특정 사업장의 주간 스케줄 조건을 생성한다.
+
+스케줄 조건 생성 시 `week_schedule`, `day`, `time_detail` 테이블에 값이 저장된다.
+
+---
+
+### Request
+
+### Method
+
+```
+POST
+```
+
+### URL
+
+```
+/api/work-places/{workPlaceId}/schedule-conditions
+```
+
+### Header
+
+```
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | Long | Y | 스케줄 조건을 생성할 사업장 ID |
+
+---
+
+### HTTP Body
+
+```json
+{
+  "workPlaceOpenTime": "09:00:00",
+  "workPlaceCloseTime": "22:00:00",
+  "minPersonalWorkCount": 1,
+  "maxPersonalWorkCount": 4,
+  "days": [
+    {
+      "dayName": "MONDAY",
+      "date": "2026-06-22",
+      "groupingId": 1,
+      "workChangeCount": 1,
+      "holidayStatus": false,
+      "selectLimitStatus": false,
+      "timeDetails": [
+        {
+          "workPartNo": 1,
+          "timeName": "오픈",
+          "workerCount": 2,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0
+        },
+        {
+          "workPartNo": 2,
+          "timeName": "마감",
+          "workerCount": 2,
+          "startTime": "13:00:00",
+          "closeTime": "22:00:00",
+          "restTime": 30
+        }
+      ]
+    },
+    {
+      "dayName": "TUESDAY",
+      "date": "2026-06-23",
+      "groupingId": 1,
+      "workChangeCount": 1,
+      "holidayStatus": false,
+      "selectLimitStatus": false,
+      "timeDetails": [
+        {
+          "workPartNo": 1,
+          "timeName": "오픈",
+          "workerCount": 2,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0
+        },
+        {
+          "workPartNo": 2,
+          "timeName": "마감",
+          "workerCount": 2,
+          "startTime": "13:00:00",
+          "closeTime": "22:00:00",
+          "restTime": 30
+        }
+      ]
+    },
+    {
+      "dayName": "WEDNESDAY",
+      "date": "2026-06-24",
+      "groupingId": 1,
+      "workChangeCount": 1,
+      "holidayStatus": false,
+      "selectLimitStatus": false,
+      "timeDetails": [
+        {
+          "workPartNo": 1,
+          "timeName": "오픈",
+          "workerCount": 2,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0
+        },
+        {
+          "workPartNo": 2,
+          "timeName": "마감",
+          "workerCount": 2,
+          "startTime": "13:00:00",
+          "closeTime": "22:00:00",
+          "restTime": 30
+        }
+      ]
+    },
+    {
+      "dayName": "THURSDAY",
+      "date": "2026-06-25",
+      "groupingId": 1,
+      "workChangeCount": 1,
+      "holidayStatus": false,
+      "selectLimitStatus": false,
+      "timeDetails": [
+        {
+          "workPartNo": 1,
+          "timeName": "오픈",
+          "workerCount": 2,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0
+        },
+        {
+          "workPartNo": 2,
+          "timeName": "마감",
+          "workerCount": 2,
+          "startTime": "13:00:00",
+          "closeTime": "22:00:00",
+          "restTime": 30
+        }
+      ]
+    },
+    {
+      "dayName": "FRIDAY",
+      "date": "2026-06-26",
+      "groupingId": 2,
+      "workChangeCount": 0,
+      "holidayStatus": false,
+      "selectLimitStatus": false,
+      "timeDetails": [
+        {
+          "workPartNo": 1,
+          "timeName": "전체",
+          "workerCount": 1,
+          "startTime": "09:00:00",
+          "closeTime": "22:00:00",
+          "restTime": 30
+        }
+      ]
+    },
+    {
+      "dayName": "SATURDAY",
+      "date": "2026-06-27",
+      "groupingId": 2,
+      "workChangeCount": 0,
+      "holidayStatus": false,
+      "selectLimitStatus": false,
+      "timeDetails": [
+        {
+          "workPartNo": 1,
+          "timeName": "전체",
+          "workerCount": 1,
+          "startTime": "09:00:00",
+          "closeTime": "22:00:00",
+          "restTime": 30
+        }
+      ]
+    },
+    {
+      "dayName": "SUNDAY",
+      "date": "2026-06-28",
+      "groupingId": null,
+      "workChangeCount": 0,
+      "holidayStatus": true,
+      "selectLimitStatus": false,
+      "timeDetails": []
+    }
+  ]
+}
+```
+
+---
+
+### HTTP Body 필드 설명
+
+#### workPlaceOpenTime
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceOpenTime | String | Y | 사업장 오픈 시간 |
+
+#### workPlaceCloseTime
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceCloseTime | String | Y | 사업장 마감 시간 |
+
+#### minPersonalWorkCount
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| minPersonalWorkCount | Integer | Y | 인원당 최소 근무수 |
+
+#### maxPersonalWorkCount
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| maxPersonalWorkCount | Integer | Y | 인원당 최대 근무수 |
+
+### days
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| days | Array | Y | 요일별 스케줄 조건 목록, 요일을 선택을 하던 안하던 무조건 7일의 요일 값들을 넣어야 합니다. |
+
+### days 내부 필드
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| dayName | String | Y | 요일 이름 |
+| date | String | Y | 해당 요일의 일자 |
+| groupingId | Integer | N | UI에서 함께 선택된 요일 그룹 ID, 요일 선택이 안됐을시엔 null로 저장 |
+| workChangeCount | Integer | Y | 근무 교대 횟수, 기본값은 0 |
+| holidayStatus | Boolean | Y | 휴무일 여부 |
+| selectLimitStatus | Boolean | Y | 근무자 선택 제한 여부 |
+| timeDetails | Array | Y | 해당 요일의 근무 타임 상세 목록 |
+
+---
+
+### dayName 허용값
+
+```
+MONDAY
+TUESDAY
+WEDNESDAY
+THURSDAY
+FRIDAY
+SATURDAY
+SUNDAY
+```
+
+---
+
+### groupingId 설명
+
+UI에서 같은 조건으로 묶인 요일들은 같은 `groupingId`를 가진다.
+
+예시:
+
+```
+월, 화, 수, 목, 토 → groupingId = 1
+금, 일 → groupingId = 2
+```
+
+저장 예시:
+
+```
+MONDAY    groupingId = 1
+TUESDAY   groupingId = 1
+WEDNESDAY groupingId = 1
+THURSDAY  groupingId = 1
+SATURDAY  groupingId = 1
+
+FRIDAY    groupingId = 2
+SUNDAY    groupingId = 2
+```
+
+---
+
+### workChangeCount 규칙
+
+`workChangeCount`는 근무 시간이 몇 번 교대되는지를 의미한다.
+
+```
+workChangeCount = 0 (모든 요일에 대한 기본값)
+→ timeDetails 1개
+
+workChangeCount = 1
+→ timeDetails 2개
+
+workChangeCount = 2
+→ timeDetails 3개
+```
+
+검증 규칙:
+
+```
+timeDetails.size() == workChangeCount + 1
+```
+
+---
+
+### holiday_status & select_limit_status 규칙
+
+holiday_status와 select_limit_status는 휴일상태와 근무자들 선택 제한 상태를 의미한다.
+
+```
+holiday_status
+- true(1) : 휴일
+- false(0) : 일반 영업 상태
+
+select_limit_status
+- true(1) : 선택불가
+- false(0) : 선택가능
+```
+
+---
+
+### timeDetails 내부 필드
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPartNo | Integer | Y | 근무 파트 번호 |
+| timeName | String | N | 근무 타임 이름 |
+| workerCount | Integer | Y | 해당 타임에 필요한 근무자 수 |
+| startTime | String | Y | 근무 시작 시간 |
+| closeTime | String | Y | 근무 종료 시간 |
+| restTime | Integer | Y | 휴게 시간. 분 단위 |
+
+---
+
+### workPartNo 설명
+
+회원별 어떤 근무 타임에 있는지 식별하기 위한 번호이다.
+
+---
+
+### Response
+
+### 성공
+
+```
+HTTP/1.1 201 Created
+```
+
+```json
+{
+  "weekScheduleId": 1,
+  "workPlaceId": 10,
+  "weekScheduleName": "6월 3주차",
+  "dueDate": "2026-06-23",
+  "status": "ACTIVE",
+  "createdAt": "2026-06-20T09:00:00",
+  "updatedAt": "2026-06-20T09:00:00"
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 이름 | 타입 | 설명 |
+| --- | --- | --- |
+| weekScheduleId | Long | 생성된 주간 스케줄 조건 ID |
+| workPlaceId | Long | 사업장 ID |
+| weekScheduleName | String | 서버가 생성한 주차 이름 |
+| dueDate | LocalDate | 근무자 제출 마감일 |
+| status | String | 주간 스케줄 조건 상태 |
+| createdAt | LocalDateTime | 생성 시간 |
+| updatedAt | LocalDateTime | 수정 시간 |
+
+---
+
+### 서버 자동 생성 값
+
+클라이언트가 보내지 않고 서버에서 생성하는 값은 다음과 같다.
+
+| 값 | 생성 방식 |
+| --- | --- |
+| weekScheduleName | 현재 날짜 기준 `"월 주차"` 형식으로 생성 |
+| dueDate | 현재 날짜 + 3일 |
+| status | `ACTIVE` |
+
+---
+
+### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| --- | --- | --- |
+| 400 | 4000 | days가 비어 있음 |
+| 400 | 4000 | groupingId가 1 미만 |
+| 400 | 4000 | workChangeCount가 0 미만 |
+| 400 | 4000 | timeDetails 개수가 workChangeCount + 1과 일치하지 않음 |
+| 400 | 4000 | 사업장 오픈 시간이 마감 시간보다 늦거나 같음 |
+| 400 | 4000 | 근무 시작 시간이 종료 시간보다 늦거나 같음 |
+| 400 | 4000 | 근무 시간이 사업장 운영 시간 범위를 벗어남 |
+| 400 | 4000 | 최소 근무 횟수가 최대 근무 횟수보다 큼 |
+| 400 | 4000 | 동일 요일 내 workPartNo가 중복됨 |
+| 401 | 4002 | Access Token이 없거나 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+| 404 | 4004 | 스케줄 조건을 생성할 수 있는 사업장을 찾을 수 없음 |
+
+---
+
+### Error Response 예시
+
+### 요청값 검증 실패
+
+```
+HTTP/1.1 400 Bad Request
+```
+
+```json
+{
+  "code": "4000",
+  "message": "요청 값이 올바르지 않습니다.",
+  "errors": [
+    {
+      "field": "days",
+      "message": "요일별 스케줄 조건은 최소 1개 이상 필요합니다."
+    }
+  ]
+}
+```
+
+### 권한 없음
+
+```
+HTTP/1.1 403 Forbidden
+```
+
+```json
+{
+  "code": "4003",
+  "message": "접근 권한이 없습니다."
+}
+```
+
+### 사업장 없음
+
+```
+HTTP/1.1 404 Not Found
+```
+
+```json
+{
+  "code": "4004",
+  "message": "조회할 수 있는 사업장을 찾을 수 없습니다."
+}
+```
+
+### 16-2. 달력 활성화용 API
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate` |
+| 설명 | 가장 최근에 생성된 스케줄 조건의 일자별 선택 가능 상태를 조회한다. |
+| 권한 | 인증된 사용자 (해당 사업장 소속 크루원 또는 사장) |
+
+---
+
+### Path Variable
+
+| 이름 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+---
+
+### Request Header
+
+| 이름 | 값 |
+| --- | --- |
+| Authorization | Bearer {accessToken} |
+
+---
+
+### Response Body
+
+```json
+{
+  "weekScheduleId": 1,
+  "workPlaceId": 10,
+  "weekScheduleName": "6월 2주차",
+  "dueDate": "2026-06-13",
+  "availableDates": [
+    {
+      "date": "2026-06-07",
+      "dayName": "SUNDAY",
+      "holidayStatus": true,
+      "selectLimitStatus": false
+    },
+    {
+      "date": "2026-06-08",
+      "dayName": "MONDAY",
+      "holidayStatus": false,
+      "selectLimitStatus": false
+    },
+    {
+      "date": "2026-06-09",
+      "dayName": "TUESDAY",
+      "holidayStatus": false,
+      "selectLimitStatus": false
+    },
+    {
+      "date": "2026-06-10",
+      "dayName": "WEDNESDAY",
+      "holidayStatus": false,
+      "selectLimitStatus": false
+    },
+    {
+      "date": "2026-06-11",
+      "dayName": "THURSDAY",
+      "holidayStatus": false,
+      "selectLimitStatus": false
+    },
+    {
+      "date": "2026-06-12",
+      "dayName": "FRIDAY",
+      "holidayStatus": false,
+      "selectLimitStatus": true
+    },
+    {
+      "date": "2026-06-13",
+      "dayName": "SATURDAY",
+      "holidayStatus": false,
+      "selectLimitStatus": false
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| weekScheduleId | Long | 주간 스케줄 ID |
+| workPlaceId | Long | 사업장 ID |
+| weekScheduleName | String | 주간 스케줄 이름 |
+| dueDate | LocalDate | 불가능 시간 제출 마감일 |
+| availableDates | Array | 일자별 선택 가능 상태 목록 |
+| availableDates[].date | LocalDate | 해당 일자 |
+| availableDates[].dayName | String | 요일명 |
+| availableDates[].holidayStatus | Boolean | 휴일 여부 (`true`: 휴일, `false`: 일반 영업일) |
+| availableDates[].selectLimitStatus | Boolean | 선택 제한 여부 (`true`: 선택 불가, `false`: 선택 가능) |
+
+---
+
+### 달력 활성화 규칙
+
+| holidayStatus | selectLimitStatus | 상태 |
+| --- | --- | --- |
+| false | false | 선택 가능 |
+| true | false | 선택 불가 (휴일) |
+| false | true | 선택 불가 (선택 제한) |
+| true | true | 선택 불가 |
+
+---
+
+### 예외 응답
+
+| HTTP Status | Code | 상황 |
+| --- | --- | --- |
+| 401 | 4002 | Access Token이 없거나 유효하지 않음 |
+| 403 | 4003 | 해당 사업장에 접근 권한이 없음 |
+| 404 | 4004 | 진행 중인 스케줄 조건을 찾을 수 없음 |
+| 500 | 500 | 서버 내부 오류 발생 |
+
+### 16-3. 특정 일자 타임 상세 조회 API
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details` |
+| 설명 | 특정 일자의 근무 타임 상세 정보를 조회한다. |
+| 권한 | 인증된 사용자 (해당 사업장 소속 크루원 또는 사장) |
+
+---
+
+### Path Variable
+
+| 이름 | 타입 | 설명 |
+| --- | --- | --- |
+| weekScheduleId | Long | 주간 스케줄 ID |
+| date | LocalDate | 조회할 일자 (yyyy-MM-dd 형식) |
+
+---
+
+### Request Header
+
+| 이름 | 값 |
+| --- | --- |
+| Authorization | Bearer {accessToken} |
+
+---
+
+### Response Body
+
+```json
+{
+  "weekScheduleId": 1,
+  "date": "2026-06-11",
+  "dayName": "THURSDAY",
+  "timeDetails": [
+    {
+      "timeDetailId": 10,
+      "timeName": "오픈",
+      "startTime": "09:00",
+      "closeTime": "13:00",
+      "workerCount": 1
+    },
+    {
+      "timeDetailId": 11,
+      "timeName": "미들",
+      "startTime": "13:00",
+      "closeTime": "18:00",
+      "workerCount": 1
+    },
+    {
+      "timeDetailId": 12,
+      "timeName": "마감",
+      "startTime": "18:00",
+      "closeTime": "22:00",
+      "workerCount": 2
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| weekScheduleId | Long | 주간 스케줄 ID |
+| date | LocalDate | 조회한 일자 |
+| dayName | String | 조회한 일자의 요일명 |
+| timeDetails | Array | 해당 일자의 근무 타임 목록 |
+| timeDetails[].timeDetailId | Long | 타임 상세 ID |
+| timeDetails[].timeName | String | 타임 이름 |
+| timeDetails[].startTime | LocalTime | 근무 시작 시간 |
+| timeDetails[].closeTime | LocalTime | 근무 종료 시간 |
+| timeDetails[].workerCount | Long | 해당 타임에 필요한 근무자 수 |
+
+---
+
+### 처리 규칙
+
+| 조건 | 설명 |
+| --- | --- |
+| weekScheduleId가 존재해야 함 | 활성 상태의 주간 스케줄만 조회 가능 |
+| date가 해당 주간 스케줄에 포함되어야 함 | 존재하지 않는 날짜는 조회 불가 |
+| 타임 정보는 workPartNo 오름차순으로 조회 | 오픈 → 미들 → 마감 순서 보장(파트 나눠서 지은 제목에 따라 달라질 수 있음) |
+| 삭제되지 않은 타임 정보만 조회 | status = ACTIVE, deletedAt IS NULL |
+
+---
+
+### 예외 응답
+
+| HTTP Status | Code | 상황 |
+| --- | --- | --- |
+| 401 | 4002 | Access Token이 없거나 유효하지 않음 |
+| 403 | 4003 | 해당 사업장 또는 스케줄에 접근 권한이 없음 |
+| 404 | 4004 | 주간 스케줄을 찾을 수 없음 |
+| 404 | 4004 | 해당 일자의 스케줄 조건을 찾을 수 없음 |
+| 500 | 500 | 서버 내부 오류 발생 |
+
+### 16-4. 최근 스케줄 조건 불러오기 API
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/schedule-conditions/latest` |
+| 설명 | 사장이 가장 최근에 생성한 스케줄 조건 1건을 조회한다. |
+| 권한 | OWNER |
+
+---
+
+### Path Variable
+
+| 이름 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+---
+
+### Request Header
+
+| 이름 | 값 |
+| --- | --- |
+| Authorization | Bearer {accessToken} |
+
+---
+
+### Response Body
+
+```json
+{
+  "weekScheduleId": 1,
+  "workPlaceId": 10,
+  "weekScheduleName": "6월 넷째 주",
+  "dueDate": "2026-06-23",
+  "groups": [
+    {
+      "groupingId": 1,
+      "dayNames": [
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY"
+      ],
+      "workPlaceOpenTime": "09:00:00",
+      "workPlaceCloseTime": "21:00:00",
+      "minPersonalWorkCount": 1,
+      "maxPersonalWorkCount": 3,
+      "timeDetails": [
+        {
+          "timeDetailId": 1,
+          "workPartNo": 1,
+          "timeName": "오전근무",
+          "workerCount": 1,
+          "startTime": "09:00:00",
+          "closeTime": "15:00:00",
+          "restMinutes": 0
+        },
+        {
+          "timeDetailId": 2,
+          "workPartNo": 2,
+          "timeName": "오후근무",
+          "workerCount": 2,
+          "startTime": "15:00:00",
+          "closeTime": "21:00:00",
+          "restMinutes": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| weekScheduleId | Long | 주간 스케줄 ID |
+| workPlaceId | Long | 사업장 ID |
+| weekScheduleName | String | 주간 스케줄 이름 |
+| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일 |
+| groups | Array | groupingId 기준으로 묶인 요일별 스케줄 조건 목록 |
+| groups[].groupingId | Integer | 요일 그룹 ID |
+| groups[].dayNames | Array | 같은 그룹에 속한 요일 목록 |
+| groups[].workPlaceOpenTime | LocalTime | 해당 그룹의 사업장 오픈 시간 |
+| groups[].workPlaceCloseTime | LocalTime | 해당 그룹의 사업장 마감 시간 |
+| groups[].minPersonalWorkCount | Long | 근무자 1명당 최소 근무 횟수 |
+| groups[].maxPersonalWorkCount | Long | 근무자 1명당 최대 근무 횟수 |
+| groups[].timeDetails | Array | 해당 그룹의 타임별 상세 정보 |
+| groups[].timeDetails[].timeDetailId | Long | 타임 상세 ID |
+| groups[].timeDetails[].workPartNo | Long | 근무 파트 번호 |
+| groups[].timeDetails[].timeName | String | 근무 타임 이름 |
+| groups[].timeDetails[].workerCount | Long | 해당 타임에 필요한 근무자 수 |
+| groups[].timeDetails[].startTime | LocalTime | 근무 시작 시간 |
+| groups[].timeDetails[].closeTime | LocalTime | 근무 종료 시간 |
+| groups[].timeDetails[].restMinutes | Integer | 휴게 시간. 분 단위 |
+
+---
+
+### 처리 규칙
+
+| 조건 | 설명 |
+| --- | --- |
+| 가장 최근 스케줄 조건 1건 조회 | `createdAt` 내림차순, `weekScheduleId` 내림차순 기준 |
+| 활성 상태만 조회 | `status = ACTIVE`, `deletedAt IS NULL` |
+| 사장만 조회 가능 | `@OwnerOnly` 적용 |
+| 본인 소유 사업장만 조회 가능 | 로그인한 사장의 사업장인지 검증 |
+| 요일 조건은 groupingId 기준으로 묶어서 반환 | 같은 groupingId를 가진 요일들은 하나의 group으로 응답 |
+| dayNames는 date 오름차순으로 정렬 | 일자 순서대로 요일 반환 |
+| timeDetails는 workPartNo 오름차순으로 정렬 | 오픈 → 미들 → 마감 순서 보장 |
+
+---
+
+### 예외 응답
+
+| HTTP Status | Code | 상황 |
+| --- | --- | --- |
+| 401 | 4002 | Access Token이 없거나 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+| 404 | 4004 | 조회할 수 있는 사업장을 찾을 수 없음 |
+| 404 | 4004 | 최근 스케줄 조건을 찾을 수 없음 |
+| 500 | 500 | 서버 내부 오류 발생 |
+
+## 17. 근무 불가 시간 선택 API
+
+### 17-1. 근무 불가 시간 선택 API
+
+### API 개요
+
+근무자가 자신이 근무할 수 없는 날짜 및 타임을 선택하여 제출한다.
+
+선택한 타임 정보는 `worker_unavailable` 테이블에 저장된다.
+
+선택한 값이 없는 경우에는 `time_detail_id = null`로 저장한다.
+
+제출이 완료되면 재제출은 불가하다.
+
+---
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/worker-select` |
+| 권한 | WORKER |
+| 설명 | 근무자가 근무 불가능한 날짜 및 타임을 제출한다. |
+
+---
+
+### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+---
+
+### Header
+
+```
+Authorization: Bearer {accessToken}
+```
+
+---
+
+### HTTP Body
+
+```json
+{
+  "timeDetails": [
+    1,
+    2,
+    3
+  ]
+}
+```
+
+---
+
+### HTTP Body 필드 설명
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| timeDetails | List | O | 선택한 근무 불가 타임 ID 목록 |
+
+---
+
+### 선택한 타임이 없는 경우
+
+```json
+{
+  "timeDetails": []
+}
+```
+
+---
+
+### Response
+
+### 성공 응답 (201 Created)
+
+```json
+{
+  "workPlaceId": 1,
+  "memberId": 3,
+  "timeDetails": [
+    {
+      "timeDetailId": 1,
+      "dayName": "MONDAY",
+      "date": "2026-06-22",
+      "workPartNo": 1,
+      "timeName": "오픈"
+    },
+    {
+      "timeDetailId": 2,
+      "dayName": "MONDAY",
+      "date": "2026-06-22",
+      "workPartNo": 2,
+      "timeName": "마감"
+    },
+    {
+      "timeDetailId": 7,
+      "dayName": "FRIDAY",
+      "date": "2026-06-26",
+      "workPartNo": 1,
+      "timeName": "전체"
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+| memberId | Long | 제출한 회원 ID |
+| timeDetails | List | 제출한 근무 불가 타임 목록 |
+| timeDetailId | Long | 타임 상세 ID |
+| dayName | String | 요일명 |
+| date | LocalDate | 날짜 |
+| workPartNo | Long | 근무 파트 번호 |
+| timeName | String | 근무 타임 이름 |
+
+---
+
+### 선택한 타임이 없는 경우 응답
+
+→ 모든 타임 전부 근무 가능한 경우
+
+```json
+{
+  "workPlaceId": 1,
+  "memberId": 3,
+  "timeDetails": []
+}
+```
+
+---
+
+### 주요 에러
+
+| HTTP Status | 메시지 |
+| --- | --- |
+| 401 | 인증 정보가 올바르지 않습니다. |
+| 403 | 이 회원은 해당 사업장의 크루원이 아닙니다. |
+| 404 | 조회할 수 있는 근무 타임 정보를 찾을 수 없습니다. |
+| 400 | 해당 타임 정보는 해당 사업장에 속하지 않습니다. |
+
+---
+
+### Error Response 예시
+
+```json
+{
+  "success": false,
+  "code": "RESOURCE_NOT_FOUND",
+  "message": "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다."
+}
+```
+
+---
+
+### 17-2. 근무자 제출 여부 조회 API
+
+### API 개요
+
+사업장에 소속된 근무자들의 근무 불가 시간 제출 여부를 조회한다.
+
+조회 기준은 다음과 같다.
+
+- 해당 사업장의 활성 크루 목록 조회
+- crew_role이 WORKER인 멤버들 전부조회
+- 크루의 memberId가 worker_unavailable 테이블에 존재하면 제출 완료
+- 존재하지 않으면 미제출
+
+---
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/worker-select/status` |
+| 권한 | OWNER |
+| 설명 | 사업장 근무자들의 제출 여부를 조회한다. |
+
+---
+
+### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+---
+
+### Header
+
+```
+Authorization: Bearer {accessToken}
+```
+
+---
+
+### Response
+
+### 성공 응답 (200 OK)
+
+```json
+{
+  "workPlaceId": 1,
+  "workers": [
+    {
+      "memberId": 2,
+      "memberName": "김철수",
+      "submitted": true
+    },
+    {
+      "memberId": 3,
+      "memberName": "이영희",
+      "submitted": false
+    },
+    {
+      "memberId": 4,
+      "memberName": "박민수",
+      "submitted": true
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+| workers | List | 사업장 근무자 목록 |
+| memberId | Long | 회원 ID |
+| memberName | String | 회원 이름 |
+| submitted | Boolean | 제출 여부 |
+
+---
+
+### 제출 여부 판단 기준
+
+| 값 | 설명 |
+| --- | --- |
+| true | worker_unavailable 테이블에 ACTIVE 상태 데이터 존재 → 제출함 |
+| false | worker_unavailable 테이블에 데이터 없음 → 제출 안함 |
+
+---
+
+### 주요 에러
+
+| HTTP Status | 메시지 |
+| --- | --- |
+| 401 | 인증 정보가 올바르지 않습니다. |
+| 403 | 이 회원은 해당 사업장의 크루원이 아닙니다. |
+
+---
+
+### Error Response 예시
+
+```json
+{
+  "success": false,
+  "code": "FORBIDDEN",
+  "message": "이 회원은 해당 사업장의 크루원이 아닙니다."
+}
+```
