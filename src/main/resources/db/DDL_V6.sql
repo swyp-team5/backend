@@ -424,8 +424,8 @@ CREATE TABLE `day` (
     CONSTRAINT `chk_day_select_limit_status`
         CHECK (`select_limit_status` IN (0, 1)),
 
-	CONSTRAINT `uk_day_week_schedule_dayname_date`
-        UNIQUE (`week_schedule_id`, `dayname`, `date`)
+	CONSTRAINT `uk_day_week_schedule_day_name_date`
+        UNIQUE (`week_schedule_id`, `day_name`, `date`)
 ) ENGINE=InnoDB 
 DEFAULT CHARSET=utf8mb4 
 COLLATE=utf8mb4_unicode_ci;
