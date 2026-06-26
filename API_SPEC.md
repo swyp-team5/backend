@@ -56,8 +56,11 @@
 ### 2.1 Base URL
 
 ```text
-http://localhost:8080
+https://chackchack.shop
 ```
+
+로컬 개발 환경에서 직접 서버를 실행하거나 Docker Compose 로컬 패키지를 사용할 때만
+`http://localhost:{APP_PORT}` 형식을 사용한다.
 
 ### 2.2 Content-Type
 
@@ -2078,7 +2081,7 @@ Authorization: Bearer {accessToken}
     "originalFileName": "profile.png",
     "storedFileName": "a1b2c3d4.png",
     "objectKey": "profile-images/1/a1b2c3d4.png",
-    "imageUrl": "https://static.example.com/profile-images/1/a1b2c3d4.png",
+    "imageUrl": "https://chackchack.shop/profile-images/1/a1b2c3d4.png",
     "contentType": "image/png",
     "fileSize": 1024,
     "uploadedAt": "2026-06-20T09:00:00"
