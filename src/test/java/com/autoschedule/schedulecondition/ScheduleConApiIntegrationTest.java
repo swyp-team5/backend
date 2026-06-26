@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.autoschedule.auth.domain.TokenType;
 import com.autoschedule.auth.jwt.JwtTokenProvider;
+import com.autoschedule.crew.domain.Crew;
+import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberRole;
 import com.autoschedule.member.domain.SocialProvider;
@@ -31,6 +33,11 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,12 +47,14 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 스케줄 조건 생성 및 최근 조회 API가 명세에 맞는 응답과 영속 상태를 만드는지 검증한다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@Testcontainers
 class ScheduleConApiIntegrationTest {
 
     @Autowired
@@ -70,9 +79,13 @@ class ScheduleConApiIntegrationTest {
     private TimeDetailRepository timeDetailRepository;
 
     @Autowired
+    private CrewRepository crewRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     private Member owner;
+    private Member worker;
     private WorkPlace workPlace;
 
     @BeforeEach
@@ -95,6 +108,16 @@ class ScheduleConApiIntegrationTest {
                 "서울시 강남구 테헤란로 1",
                 null
         ));
+
+        worker = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE,
+                "worker-subject",
+                "worker@test.com",
+                "근무자",
+                "01033334444",
+                MemberRole.WORKER
+        ));
+        crewRepository.save(Crew.createWorker(worker, workPlace));
     }
 
     // ─────────────────────────────────────────────
@@ -472,6 +495,481 @@ class ScheduleConApiIntegrationTest {
     }
 
     // ─────────────────────────────────────────────
+    // 달력 조회
+    // ─────────────────────────────────────────────
+
+    /**
+     * 근무자가 소속된 사업장의 달력 활성화 날짜를 조회하면 200과 날짜 목록을 반환한다.
+     */
+    @Test
+    void getCalendarActivateDates_success() throws Exception {
+        WeekSchedule weekSchedule = saveWeekScheduleInDb();
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        saveDayInDb(weekSchedule, ScheduleDayName.MONDAY, monday, 1);
+        saveDayInDb(weekSchedule, ScheduleDayName.TUESDAY, monday.plusDays(1), 1);
+        saveDayInDb(weekSchedule, ScheduleDayName.WEDNESDAY, monday.plusDays(2), 1);
+        saveDayInDb(weekSchedule, ScheduleDayName.THURSDAY, monday.plusDays(3), 1);
+        saveDayInDb(weekSchedule, ScheduleDayName.FRIDAY, monday.plusDays(4), 2);
+        saveDayInDb(weekSchedule, ScheduleDayName.SATURDAY, monday.plusDays(5), null);
+        saveDayInDb(weekSchedule, ScheduleDayName.SUNDAY, monday.plusDays(6), null);
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate",
+                        workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.weekScheduleId").isNumber())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.availableDates").isArray());
+    }
+
+    /**
+     * @WorkerOnly 엔드포인트에 사장이 접근하면 403을 반환한다.
+     */
+    @Test
+    void getCalendarActivateDates_failsWhenOwnerRequests() throws Exception {
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate",
+                        workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 해당 사업장 크루가 아닌 근무자가 달력을 조회하면 403을 반환한다.
+     */
+    @Test
+    void getCalendarActivateDates_failsWhenNotCrewMember() throws Exception {
+        Member stranger = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE, "stranger-subject", "stranger@test.com",
+                "외부인", "01099998888", MemberRole.WORKER
+        ));
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate",
+                        workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(stranger)))
+                .andExpect(status().isForbidden());
+    }
+
+    // ─────────────────────────────────────────────
+    // 타임 상세 조회
+    // ─────────────────────────────────────────────
+
+    /**
+     * 근무자가 존재하는 날짜의 타임 상세 정보를 조회하면 200과 상세 목록을 반환한다.
+     */
+    @Test
+    void getDayTimeDetails_success() throws Exception {
+        WeekSchedule weekSchedule = saveWeekScheduleInDb();
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        Day day = saveDayInDb(weekSchedule, ScheduleDayName.MONDAY, monday, 1);
+        saveTimeDetailInDb(day);
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details",
+                        workPlace.getId(), weekSchedule.getId(), monday)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.weekScheduleId").value(weekSchedule.getId()))
+                .andExpect(jsonPath("$.date").value(monday.toString()))
+                .andExpect(jsonPath("$.dayName").value("MONDAY"))
+                .andExpect(jsonPath("$.timeDetails").isArray())
+                .andExpect(jsonPath("$.timeDetails.length()").value(1));
+    }
+
+    /**
+     * 존재하지 않는 날짜로 타임 상세 조회를 하면 404를 반환한다.
+     */
+    @Test
+    void getDayTimeDetails_failsWhenDateNotFound() throws Exception {
+        WeekSchedule weekSchedule = saveWeekScheduleInDb();
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details",
+                        workPlace.getId(), weekSchedule.getId(), LocalDate.of(2099, 1, 1))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * @WorkerOnly 엔드포인트에 사장이 접근하면 403을 반환한다.
+     */
+    @Test
+    void getDayTimeDetails_failsWhenOwnerRequests() throws Exception {
+        WeekSchedule weekSchedule = saveWeekScheduleInDb();
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details",
+                        workPlace.getId(), weekSchedule.getId(), monday)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isForbidden());
+    }
+
+    // ─────────────────────────────────────────────
+    // 타 사업장 사용자 접근
+    // ─────────────────────────────────────────────
+
+    /**
+     * 다른 사업장의 사장이 스케줄 조건 생성을 시도하면 403을 반환한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenOtherOwnerRequests() throws Exception {
+        Member otherOwner = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE, "other-owner-subject", "other@test.com",
+                "타사장", "01077776666", MemberRole.OWNER
+        ));
+        workPlaceRepository.save(WorkPlace.create(
+                otherOwner.getId(), WorkPlaceSize.ONE_TO_FOUR, "타가게", "부산시 해운대구 1", null
+        ));
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(otherOwner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildValidRequest()))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 다른 사업장 소속 근무자가 달력 조회를 시도하면 403을 반환한다.
+     */
+    @Test
+    void getCalendarActivateDates_failsWhenOtherWorkPlaceWorkerRequests() throws Exception {
+        Member otherOwner = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE, "other-owner2-subject", "other2@test.com",
+                "타사장2", "01055554444", MemberRole.OWNER
+        ));
+        WorkPlace otherWorkPlace = workPlaceRepository.save(WorkPlace.create(
+                otherOwner.getId(), WorkPlaceSize.ONE_TO_FOUR, "타가게2", "부산시 해운대구 2", null
+        ));
+        Member otherWorker = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE, "other-worker-subject", "otherworker@test.com",
+                "타근무자", "01044443333", MemberRole.WORKER
+        ));
+        crewRepository.save(Crew.createWorker(otherWorker, otherWorkPlace));
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate",
+                        workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(otherWorker)))
+                .andExpect(status().isForbidden());
+    }
+
+    // ─────────────────────────────────────────────
+    // 승인되지 않은 근무자 접근
+    // ─────────────────────────────────────────────
+
+    /**
+     * joinStatus가 PENDING인 크루가 달력 조회를 시도하면 403을 반환한다.
+     */
+    @Test
+    void getCalendarActivateDates_failsWhenCrewNotApproved() throws Exception {
+        Member pendingWorker = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE, "pending-subject", "pending@test.com",
+                "미승인근무자", "01022221111", MemberRole.WORKER
+        ));
+        jdbcTemplate.update(
+                "insert into crew (member_id, work_place_id, join_status, crew_role, status, created_at, updated_at) "
+                        + "values (?, ?, 'PENDING', 'WORKER', 'ACTIVE', now(), now())",
+                pendingWorker.getId(), workPlace.getId()
+        );
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate",
+                        workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(pendingWorker)))
+                .andExpect(status().isForbidden());
+    }
+
+    // ─────────────────────────────────────────────
+    // 삭제된 부모 리소스 접근
+    // ─────────────────────────────────────────────
+
+    /**
+     * 삭제된 사업장에 스케줄 조건 생성을 시도하면 404를 반환한다.
+     *
+     */
+    @Test
+    void createScheduleCondition_failsWhenWorkPlaceDeleted() throws Exception {
+        jdbcTemplate.update(
+                "update work_place set deleted_at = now() where work_place_id = ?",
+                workPlace.getId()
+        );
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildValidRequest()))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 삭제된 주간 스케줄의 타임 상세 조회를 시도하면 404를 반환한다.
+     */
+    @Test
+    void getDayTimeDetails_failsWhenWeekScheduleDeleted() throws Exception {
+        WeekSchedule weekSchedule = saveWeekScheduleInDb();
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        saveDayInDb(weekSchedule, ScheduleDayName.MONDAY, monday, 1);
+
+        jdbcTemplate.update(
+                "update week_schedule set deleted_at = now() where week_schedule_id = ?",
+                weekSchedule.getId()
+        );
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details",
+                        workPlace.getId(), weekSchedule.getId(), monday)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isNotFound());
+    }
+
+    // ─────────────────────────────────────────────
+    // 날짜 개수 / 중복 / 요일 불일치
+    // ─────────────────────────────────────────────
+
+    /**
+     * days가 6개이면 스케줄 조건 생성 요청이 실패한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenDaysCountIsSix() throws Exception {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workPlaceOpenTime": "09:00:00",
+                                  "workPlaceCloseTime": "22:00:00",
+                                  "minPersonalWorkCount": 1,
+                                  "maxPersonalWorkCount": 5,
+                                  "days": [%s, %s, %s, %s, %s, %s]
+                                }
+                                """.formatted(
+                                buildDayJson("MONDAY",    nextMonday,                 1, 0),
+                                buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
+                                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0)
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
+     * days가 8개이면 스케줄 조건 생성 요청이 실패한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenDaysCountIsEight() throws Exception {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workPlaceOpenTime": "09:00:00",
+                                  "workPlaceCloseTime": "22:00:00",
+                                  "minPersonalWorkCount": 1,
+                                  "maxPersonalWorkCount": 5,
+                                  "days": [%s, %s, %s, %s, %s, %s, %s, %s]
+                                }
+                                """.formatted(
+                                buildDayJson("MONDAY",    nextMonday,                 1, 0),
+                                buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
+                                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
+                                buildSundayDayJson(),
+                                buildDayJson("MONDAY",    nextMonday,                 1, 0)
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
+     * 동일한 날짜가 중복 포함되면 스케줄 조건 생성 요청이 실패한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenDuplicateDate() throws Exception {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workPlaceOpenTime": "09:00:00",
+                                  "workPlaceCloseTime": "22:00:00",
+                                  "minPersonalWorkCount": 1,
+                                  "maxPersonalWorkCount": 5,
+                                  "days": [%s, %s, %s, %s, %s, %s, %s]
+                                }
+                                """.formatted(
+                                buildDayJson("MONDAY",    nextMonday,                 1, 0),
+                                buildDayJson("TUESDAY",   nextMonday,                 1, 0),
+                                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
+                                buildSundayDayJson()
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
+     * dayName과 실제 날짜의 요일이 불일치하면 스케줄 조건 생성 요청이 실패한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenDayNameMismatch() throws Exception {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workPlaceOpenTime": "09:00:00",
+                                  "workPlaceCloseTime": "22:00:00",
+                                  "minPersonalWorkCount": 1,
+                                  "maxPersonalWorkCount": 5,
+                                  "days": [%s, %s, %s, %s, %s, %s, %s]
+                                }
+                                """.formatted(
+                                buildDayJson("TUESDAY",   nextMonday,                 1, 0),
+                                buildDayJson("MONDAY",    nextMonday.plusDays(1), 1, 0),
+                                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
+                                buildSundayDayJson()
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    // ─────────────────────────────────────────────
+    // 그룹별 조건 불일치
+    // ─────────────────────────────────────────────
+
+    /**
+     * 같은 그룹 내 요일들의 타임 상세 조건이 다르면 스케줄 조건 생성 요청이 실패한다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenGroupConditionMismatch() throws Exception {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workPlaceOpenTime": "09:00:00",
+                                  "workPlaceCloseTime": "22:00:00",
+                                  "minPersonalWorkCount": 1,
+                                  "maxPersonalWorkCount": 5,
+                                  "days": [
+                                    {
+                                      "dayName": "MONDAY", "date": "%s", "groupingId": 1,
+                                      "workChangeCount": 0, "holidayStatus": false, "selectLimitStatus": false,
+                                      "timeDetails": [{"workPartNo": 1, "workerCount": 2, "startTime": "09:00:00", "closeTime": "17:00:00", "restTime": 0}]
+                                    },
+                                    {
+                                      "dayName": "TUESDAY", "date": "%s", "groupingId": 1,
+                                      "workChangeCount": 0, "holidayStatus": false, "selectLimitStatus": false,
+                                      "timeDetails": [{"workPartNo": 1, "workerCount": 2, "startTime": "10:00:00", "closeTime": "18:00:00", "restTime": 0}]
+                                    },
+                                    %s, %s, %s, %s, %s
+                                  ]
+                                }
+                                """.formatted(
+                                nextMonday,
+                                nextMonday.plusDays(1),
+                                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
+                                buildSundayDayJson()
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    // ─────────────────────────────────────────────
+    // 타임 겹침
+    // ─────────────────────────────────────────────
+
+    /**
+     * 같은 요일 내 교대 타임 시간이 겹치면 스케줄 조건 생성 요청이 실패한다.
+     * 파트1(09:00~15:00)과 파트2(13:00~18:00)가 겹치는 케이스.
+     */
+    @Test
+    void createScheduleCondition_failsWhenTimeDetailsOverlap() throws Exception {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workPlaceOpenTime": "09:00:00",
+                                  "workPlaceCloseTime": "22:00:00",
+                                  "minPersonalWorkCount": 1,
+                                  "maxPersonalWorkCount": 5,
+                                  "days": [
+                                    {
+                                      "dayName": "MONDAY", "date": "%s", "groupingId": 1,
+                                      "workChangeCount": 1, "holidayStatus": false, "selectLimitStatus": false,
+                                      "timeDetails": [
+                                        {"workPartNo": 1, "workerCount": 2, "startTime": "09:00:00", "closeTime": "15:00:00", "restTime": 0},
+                                        {"workPartNo": 2, "workerCount": 2, "startTime": "13:00:00", "closeTime": "18:00:00", "restTime": 0}
+                                      ]
+                                    },
+                                    %s, %s, %s, %s, %s, %s
+                                  ]
+                                }
+                                """.formatted(
+                                nextMonday,
+                                buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
+                                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
+                                buildSundayDayJson()
+                        )))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    // ─────────────────────────────────────────────
+    // 동시 생성
+    // ─────────────────────────────────────────────
+
+    /**
+     * 동일 사업장에 같은 주차 스케줄 조건을 동시에 2개 요청하면 하나만 성공(201)하고 나머지는 실패(409)한다.
+     */
+    @Test
+    void createScheduleCondition_handlesMultipleConcurrentRequests() throws Exception {
+        String request = buildValidRequest();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch latch = new CountDownLatch(2);
+        List<Integer> statuses = new CopyOnWriteArrayList<>();
+
+        for (int i = 0; i < 2; i++) {
+            executor.submit(() -> {
+                try {
+                    int status = mockMvc.perform(
+                                    post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                                            .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .content(request))
+                            .andReturn().getResponse().getStatus();
+                    statuses.add(status);
+                } catch (Exception e) {
+                    statuses.add(500);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(statuses).containsExactlyInAnyOrder(201, 500);
+    }
+
+    // ─────────────────────────────────────────────
     // 경계값 테스트
     // ─────────────────────────────────────────────
 
@@ -529,13 +1027,13 @@ class ScheduleConApiIntegrationTest {
     // ─────────────────────────────────────────────
 
     /**
-     * 정상 스케줄 조건 생성 요청 JSON을 반환한다.
+     * 다음 주 날짜를 기반으로 정상 스케줄 조건 생성 요청 JSON을 반환한다.
      * - 월~목: groupingId=1, workChangeCount=0, timeDetail 1개
      * - 금~토: groupingId=2, workChangeCount=0, timeDetail 1개
      * - 일요일: groupingId=null, timeDetails=[]
      */
     private String buildValidRequest() {
-        LocalDate monday = LocalDate.of(2025, 7, 7);
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         return """
                 {
                   "workPlaceOpenTime": "09:00:00",
@@ -553,12 +1051,12 @@ class ScheduleConApiIntegrationTest {
                   ]
                 }
                 """.formatted(
-                buildDayJson("MONDAY",    monday,          1, 0),
-                buildDayJson("TUESDAY",   monday.plusDays(1), 1, 0),
-                buildDayJson("WEDNESDAY", monday.plusDays(2), 1, 0),
-                buildDayJson("THURSDAY",  monday.plusDays(3), 1, 0),
-                buildDayJson("FRIDAY",    monday.plusDays(4), 2, 0),
-                buildDayJson("SATURDAY",  monday.plusDays(5), 2, 0),
+                buildDayJson("MONDAY",    nextMonday,             1, 0),
+                buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
+                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
                 buildSundayDayJson()
         );
     }
@@ -568,7 +1066,7 @@ class ScheduleConApiIntegrationTest {
      * 그룹 1의 대표 요일(월요일)에 workPartNo 2, 1 역순으로 넣어 정렬 검증에 사용한다.
      */
     private String buildRequestWithMultipleTimeDetails() {
-        LocalDate monday = LocalDate.of(2025, 7, 7);
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         return """
                 {
                   "workPlaceOpenTime": "09:00:00",
@@ -588,21 +1086,54 @@ class ScheduleConApiIntegrationTest {
                         { "workPartNo": 1, "workerCount": 2, "startTime": "09:00:00", "closeTime": "13:00:00", "restTime": 0 }
                       ]
                     },
-                    %s,
-                    %s,
-                    %s,
+                    {
+                      "dayName": "TUESDAY",
+                      "date": "%s",
+                      "groupingId": 1,
+                      "workChangeCount": 1,
+                      "holidayStatus": false,
+                      "selectLimitStatus": false,
+                      "timeDetails": [
+                        { "workPartNo": 2, "workerCount": 2, "startTime": "14:00:00", "closeTime": "18:00:00", "restTime": 0 },
+                        { "workPartNo": 1, "workerCount": 2, "startTime": "09:00:00", "closeTime": "13:00:00", "restTime": 0 }
+                      ]
+                    },
+                    {
+                      "dayName": "WEDNESDAY",
+                      "date": "%s",
+                      "groupingId": 1,
+                      "workChangeCount": 1,
+                      "holidayStatus": false,
+                      "selectLimitStatus": false,
+                      "timeDetails": [
+                        { "workPartNo": 2, "workerCount": 2, "startTime": "14:00:00", "closeTime": "18:00:00", "restTime": 0 },
+                        { "workPartNo": 1, "workerCount": 2, "startTime": "09:00:00", "closeTime": "13:00:00", "restTime": 0 }
+                      ]
+                    },
+                    {
+                      "dayName": "THURSDAY",
+                      "date": "%s",
+                      "groupingId": 1,
+                      "workChangeCount": 1,
+                      "holidayStatus": false,
+                      "selectLimitStatus": false,
+                      "timeDetails": [
+                        { "workPartNo": 2, "workerCount": 2, "startTime": "14:00:00", "closeTime": "18:00:00", "restTime": 0 },
+                        { "workPartNo": 1, "workerCount": 2, "startTime": "09:00:00", "closeTime": "13:00:00", "restTime": 0 }
+                      ]
+                    },
                     %s,
                     %s,
                     %s
                   ]
                 }
                 """.formatted(
-                monday,
-                buildDayJson("TUESDAY",   monday.plusDays(1), 1, 0),
-                buildDayJson("WEDNESDAY", monday.plusDays(2), 1, 0),
-                buildDayJson("THURSDAY",  monday.plusDays(3), 1, 0),
-                buildDayJson("FRIDAY",    monday.plusDays(4), 2, 0),
-                buildDayJson("SATURDAY",  monday.plusDays(5), 2, 0),
+                nextMonday,
+                nextMonday.plusDays(1),
+                nextMonday.plusDays(2),
+                nextMonday.plusDays(3),
+                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
                 buildSundayDayJson()
         );
     }
@@ -611,7 +1142,7 @@ class ScheduleConApiIntegrationTest {
      * minPersonalWorkCount와 maxPersonalWorkCount만 변경한 요청 JSON을 반환한다.
      */
     private String buildRequestWithMinMax(int min, int max) {
-        LocalDate monday = LocalDate.of(2025, 7, 7);
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         return """
                 {
                   "workPlaceOpenTime": "09:00:00",
@@ -630,12 +1161,12 @@ class ScheduleConApiIntegrationTest {
                 }
                 """.formatted(
                 min, max,
-                buildDayJson("MONDAY",    monday,          1, 0),
-                buildDayJson("TUESDAY",   monday.plusDays(1), 1, 0),
-                buildDayJson("WEDNESDAY", monday.plusDays(2), 1, 0),
-                buildDayJson("THURSDAY",  monday.plusDays(3), 1, 0),
-                buildDayJson("FRIDAY",    monday.plusDays(4), 2, 0),
-                buildDayJson("SATURDAY",  monday.plusDays(5), 2, 0),
+                buildDayJson("MONDAY",    nextMonday,             1, 0),
+                buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
+                buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
+                buildDayJson("THURSDAY",  nextMonday.plusDays(3), 1, 0),
+                buildDayJson("FRIDAY",    nextMonday.plusDays(4), 2, 0),
+                buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
                 buildSundayDayJson()
         );
     }
@@ -660,10 +1191,12 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
-     * groupingId=null인 일요일 요일 JSON 조각을 반환한다.
+     * 다음 주 일요일 날짜로 groupingId=null인 일요일 JSON 조각을 반환한다.
      */
     private String buildSundayDayJson() {
-        LocalDate sunday = LocalDate.of(2025, 7, 13);
+        LocalDate nextSunday = LocalDate.now()
+                .with(TemporalAdjusters.next(DayOfWeek.MONDAY))
+                .plusDays(6);
         return """
                 {
                   "dayName": "SUNDAY",
@@ -674,7 +1207,33 @@ class ScheduleConApiIntegrationTest {
                   "selectLimitStatus": false,
                   "timeDetails": []
                 }
-                """.formatted(sunday);
+                """.formatted(nextSunday);
+    }
+
+    private WeekSchedule saveWeekScheduleInDb() {
+        return weekScheduleRepository.save(WeekSchedule.create(
+                workPlace,
+                "테스트 주차",
+                LocalDate.now().plusDays(3),
+                LocalTime.of(9, 0),
+                LocalTime.of(22, 0),
+                1,
+                5
+        ));
+    }
+
+    private Day saveDayInDb(WeekSchedule weekSchedule, ScheduleDayName dayName,
+                            LocalDate date, Integer groupingId) {
+        return dayRepository.save(Day.create(
+                weekSchedule, dayName, date, groupingId, 0, false, false
+        ));
+    }
+
+    private TimeDetail saveTimeDetailInDb(Day day) {
+        return timeDetailRepository.save(TimeDetail.create(
+                day, 1, "오픈", 2,
+                LocalTime.of(9, 0), LocalTime.of(17, 0), 60
+        ));
     }
 
     /**
@@ -688,10 +1247,13 @@ class ScheduleConApiIntegrationTest {
      * 테스트 격리를 위해 스케줄 관련 테이블을 참조 순서에 맞게 삭제한다.
      */
     private void cleanupDatabase() {
+        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
         jdbcTemplate.update("delete from time_detail");
         jdbcTemplate.update("delete from day");
         jdbcTemplate.update("delete from week_schedule");
+        jdbcTemplate.update("delete from crew");
         jdbcTemplate.update("delete from work_place");
         jdbcTemplate.update("delete from member");
+        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
     }
 }

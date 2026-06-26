@@ -8,9 +8,9 @@ import java.time.LocalTime;
  */
 public record TimeDetailResponse(
         Long timeDetailId,
-        Long workPartNo,
+        Integer workPartNo,
         String timeName,
-        Long workerCount,
+        Integer workerCount,
         LocalTime startTime,
         LocalTime closeTime,
         Integer restTime

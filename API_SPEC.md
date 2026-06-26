@@ -42,6 +42,12 @@
 - 알림 단건 읽음 처리
 - 모든 알림 읽음 처리
 - FCM 테스트 푸시 발송
+- 스케줄 조건 생성
+- 달력 활성화 일자 조회
+- 특정 일자 타임 상세조회
+- 최근 스케줄 조건 조회
+- 근무자 근무불가 시간 선택
+- 근무자 제출 여부 조회
 
 모든 API URL은 `/api/*` 규칙을 따른다. `/api/v1/*` 형식은 사용하지 않는다.
 
@@ -2472,8 +2478,6 @@ idx_profile_image_member_status_deleted (member_id, status, deleted_at)
 
 스케줄 조건 생성 시 `week_schedule`, `day`, `time_detail` 테이블에 값이 저장된다.
 
-`time_detail.memberId`는 초기에는 `null`로 저장되며, 이후 근무자들이 불가능 일정을 제출하고 자동 스케줄링이 완료되면 배정된 근무자의 `memberId`로 갱신된다.
-
 ---
 
 ### Request
@@ -2798,12 +2802,12 @@ select_limit_status
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| workPartNo | Long | Y | 근무 파트 번호 |
+| workPartNo | Integer | Y | 근무 파트 번호 |
 | timeName | String | N | 근무 타임 이름 |
-| workerCount | Long | Y | 해당 타임에 필요한 근무자 수 |
+| workerCount | Integer | Y | 해당 타임에 필요한 근무자 수 |
 | startTime | String | Y | 근무 시작 시간 |
 | closeTime | String | Y | 근무 종료 시간 |
-| restMinutes | Integer | Y | 휴게 시간. 분 단위 |
+| restTime | Integer | Y | 휴게 시간. 분 단위 |
 
 ---
 
@@ -3056,7 +3060,7 @@ HTTP/1.1 404 Not Found
 | 항목 | 내용 |
 | --- | --- |
 | Method | GET |
-| URL | `/api/week-schedules/{weekScheduleId}/days/{date}/time-details` |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details` |
 | 설명 | 특정 일자의 근무 타임 상세 정보를 조회한다. |
 | 권한 | 인증된 사용자 (해당 사업장 소속 크루원 또는 사장) |
 
@@ -3278,3 +3282,277 @@ HTTP/1.1 404 Not Found
 | 404 | 4004 | 조회할 수 있는 사업장을 찾을 수 없음 |
 | 404 | 4004 | 최근 스케줄 조건을 찾을 수 없음 |
 | 500 | 500 | 서버 내부 오류 발생 |
+
+## 17. 근무 불가 시간 선택 API
+
+### 17-1. 근무 불가 시간 선택 API
+
+### API 개요
+
+근무자가 자신이 근무할 수 없는 날짜 및 타임을 선택하여 제출한다.
+
+선택한 타임 정보는 `worker_unavailable` 테이블에 저장된다.
+
+선택한 값이 없는 경우에는 `time_detail_id = null`로 저장한다.
+
+제출이 완료되면 재제출은 불가하다.
+
+---
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/worker-select` |
+| 권한 | WORKER |
+| 설명 | 근무자가 근무 불가능한 날짜 및 타임을 제출한다. |
+
+---
+
+### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+---
+
+### Header
+
+```
+Authorization: Bearer {accessToken}
+```
+
+---
+
+### HTTP Body
+
+```json
+{
+  "timeDetails": [
+    1,
+    2,
+    3
+  ]
+}
+```
+
+---
+
+### HTTP Body 필드 설명
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| timeDetails | List | O | 선택한 근무 불가 타임 ID 목록 |
+
+---
+
+### 선택한 타임이 없는 경우
+
+```json
+{
+  "timeDetails": []
+}
+```
+
+---
+
+### Response
+
+### 성공 응답 (201 Created)
+
+```json
+{
+  "workPlaceId": 1,
+  "memberId": 3,
+  "timeDetails": [
+    {
+      "timeDetailId": 1,
+      "dayName": "MONDAY",
+      "date": "2026-06-22",
+      "workPartNo": 1,
+      "timeName": "오픈"
+    },
+    {
+      "timeDetailId": 2,
+      "dayName": "MONDAY",
+      "date": "2026-06-22",
+      "workPartNo": 2,
+      "timeName": "마감"
+    },
+    {
+      "timeDetailId": 7,
+      "dayName": "FRIDAY",
+      "date": "2026-06-26",
+      "workPartNo": 1,
+      "timeName": "전체"
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+| memberId | Long | 제출한 회원 ID |
+| timeDetails | List | 제출한 근무 불가 타임 목록 |
+| timeDetailId | Long | 타임 상세 ID |
+| dayName | String | 요일명 |
+| date | LocalDate | 날짜 |
+| workPartNo | Long | 근무 파트 번호 |
+| timeName | String | 근무 타임 이름 |
+
+---
+
+### 선택한 타임이 없는 경우 응답
+
+→ 모든 타임 전부 근무 가능한 경우
+
+```json
+{
+  "workPlaceId": 1,
+  "memberId": 3,
+  "timeDetails": []
+}
+```
+
+---
+
+### 주요 에러
+
+| HTTP Status | 메시지 |
+| --- | --- |
+| 401 | 인증 정보가 올바르지 않습니다. |
+| 403 | 이 회원은 해당 사업장의 크루원이 아닙니다. |
+| 404 | 조회할 수 있는 근무 타임 정보를 찾을 수 없습니다. |
+| 400 | 해당 타임 정보는 해당 사업장에 속하지 않습니다. |
+
+---
+
+### Error Response 예시
+
+```json
+{
+  "success": false,
+  "code": "RESOURCE_NOT_FOUND",
+  "message": "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다."
+}
+```
+
+---
+
+### 17-2. 근무자 제출 여부 조회 API
+
+### API 개요
+
+사업장에 소속된 근무자들의 근무 불가 시간 제출 여부를 조회한다.
+
+조회 기준은 다음과 같다.
+
+- 해당 사업장의 활성 크루 목록 조회
+- crew_role이 WORKER인 멤버들 전부조회
+- 크루의 memberId가 worker_unavailable 테이블에 존재하면 제출 완료
+- 존재하지 않으면 미제출
+
+---
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/worker-select/status` |
+| 권한 | OWNER |
+| 설명 | 사업장 근무자들의 제출 여부를 조회한다. |
+
+---
+
+### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+---
+
+### Header
+
+```
+Authorization: Bearer {accessToken}
+```
+
+---
+
+### Response
+
+### 성공 응답 (200 OK)
+
+```json
+{
+  "workPlaceId": 1,
+  "workers": [
+    {
+      "memberId": 2,
+      "memberName": "김철수",
+      "submitted": true
+    },
+    {
+      "memberId": 3,
+      "memberName": "이영희",
+      "submitted": false
+    },
+    {
+      "memberId": 4,
+      "memberName": "박민수",
+      "submitted": true
+    }
+  ]
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+| workers | List | 사업장 근무자 목록 |
+| memberId | Long | 회원 ID |
+| memberName | String | 회원 이름 |
+| submitted | Boolean | 제출 여부 |
+
+---
+
+### 제출 여부 판단 기준
+
+| 값 | 설명 |
+| --- | --- |
+| true | worker_unavailable 테이블에 ACTIVE 상태 데이터 존재 → 제출함 |
+| false | worker_unavailable 테이블에 데이터 없음 → 제출 안함 |
+
+---
+
+### 주요 에러
+
+| HTTP Status | 메시지 |
+| --- | --- |
+| 401 | 인증 정보가 올바르지 않습니다. |
+| 403 | 이 회원은 해당 사업장의 크루원이 아닙니다. |
+
+---
+
+### Error Response 예시
+
+```json
+{
+  "success": false,
+  "code": "FORBIDDEN",
+  "message": "이 회원은 해당 사업장의 크루원이 아닙니다."
+}
+```

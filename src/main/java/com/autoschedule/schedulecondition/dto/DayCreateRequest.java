@@ -22,6 +22,7 @@ public record DayCreateRequest(
         @Min(value = 1, message = "그룹핑 ID는 1 이상이어야 합니다.")
         Integer groupingId,
 
+        @NotNull(message = "근무 교대는 필수입니다.")
         @Min(value = 0, message = "근무 교대 횟수는 0 이상이어야 합니다.")
         Integer workChangeCount,
 

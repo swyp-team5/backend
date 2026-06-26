@@ -1,4 +1,4 @@
-﻿CREATE TABLE member (
+CREATE TABLE member (
     member_id BIGINT NOT NULL AUTO_INCREMENT,
     social_provider VARCHAR(20) NOT NULL,
     social_subject VARCHAR(255) NOT NULL,
@@ -402,10 +402,10 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `day` (
     `day_id` BIGINT NOT NULL AUTO_INCREMENT,
     `week_schedule_id` BIGINT NOT NULL,
-    `dayname` VARCHAR(20) NOT NULL,
+    `day_name` VARCHAR(20) NOT NULL,
     `date` DATE NOT NULL,
     `grouping_id` INT NULL,
-    `work_change_count` INT NULL DEFAULT 0,
+    `work_change_count` INT NOT NULL DEFAULT 0,
     `holiday_status` TINYINT(1) NOT NULL DEFAULT 0,
     `select_limit_status` TINYINT(1) NOT NULL DEFAULT 0,
     `status` VARCHAR(20) NOT NULL,
@@ -424,8 +424,8 @@ CREATE TABLE `day` (
     CONSTRAINT `chk_day_select_limit_status`
         CHECK (`select_limit_status` IN (0, 1)),
 
-	CONSTRAINT `uk_day_week_schedule_dayname_date`
-        UNIQUE (`week_schedule_id`, `dayname`, `date`)
+	CONSTRAINT `uk_day_week_schedule_day_name_date`
+        UNIQUE (`week_schedule_id`, `day_name`, `date`)
 ) ENGINE=InnoDB 
 DEFAULT CHARSET=utf8mb4 
 COLLATE=utf8mb4_unicode_ci;
@@ -433,9 +433,9 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE `time_detail` (
     `time_detail_id` BIGINT NOT NULL AUTO_INCREMENT,
     `day_id` BIGINT NOT NULL,
-    `work_part_no` BIGINT NOT NULL,
+    `work_part_no` INT NOT NULL,
     `time_name` VARCHAR(20) NULL,
-    `worker_count` BIGINT NOT NULL,
+    `worker_count` INT NOT NULL,
     `start_time` TIME NOT NULL,
     `close_time` TIME NOT NULL,
     `rest_time` INT NOT NULL,
@@ -452,7 +452,7 @@ CREATE TABLE `time_detail` (
     CONSTRAINT `chk_time_detail_worker_count`
         CHECK (`worker_count` >= 1),
 
-	CONSTRAINT `uk_time_detail_day_member_part`
+	CONSTRAINT `uk_time_detail_day_work_part_no`
     UNIQUE (`day_id`, `work_part_no`)
 ) ENGINE=InnoDB 
 DEFAULT CHARSET=utf8mb4 

@@ -2,6 +2,7 @@ package com.autoschedule.schedulecondition.controller;
 
 import com.autoschedule.auth.jwt.JwtAuthenticationPrincipal;
 import com.autoschedule.global.security.annotation.OwnerOnly;
+import com.autoschedule.global.security.annotation.WorkerOnly;
 import com.autoschedule.schedulecondition.dto.*;
 import com.autoschedule.schedulecondition.service.ScheduleConditionService;
 import jakarta.validation.Valid;
@@ -59,6 +60,7 @@ public class ScheduleConditionController {
     /**
      * 달력 활성화용 날짜 목록을 조회한다. 근무자들이 근무 불가능한 일자 선택할 때 보는 달력
      */
+    @WorkerOnly
     @GetMapping("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate")
     public ScheduleConditionCalendarResponse getCalendarActivateDates(
             @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
@@ -73,14 +75,17 @@ public class ScheduleConditionController {
     /**
      * 특정 일자의 타임 상세 정보를 조회한다.
      */
-    @GetMapping("/api/week-schedules/{weekScheduleId}/days/{date}/time-details")
+    @WorkerOnly
+    @GetMapping("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/days/{date}/time-details")
     public DayTimeDetailResponse getDayTimeDetails(
             @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
             @PathVariable Long weekScheduleId,
             @PathVariable LocalDate date
     ) {
         return scheduleConditionService.getDayTimeDetails(
                 principal.memberId(),
+                workPlaceId,
                 weekScheduleId,
                 date
         );
