@@ -14,9 +14,10 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 ENV TZ=Asia/Seoul
+ENV JAVA_OPTS=""
 
 COPY --from=build /workspace/build/libs/*.jar /app/autoschedule.jar
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "/app/autoschedule.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/autoschedule.jar"]
