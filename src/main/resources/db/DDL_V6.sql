@@ -277,6 +277,36 @@ CREATE INDEX idx_notice_work_place_representative_status_deleted
     ON notice (work_place_id, representative, status, deleted_at);
 
 
+CREATE TABLE notice_reaction (
+    notice_reaction_id BIGINT NOT NULL AUTO_INCREMENT,
+    notice_id BIGINT NOT NULL,
+    member_id BIGINT NOT NULL,
+    reaction_type VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+
+    PRIMARY KEY (notice_reaction_id),
+
+    CONSTRAINT fk_notice_reaction_notice
+        FOREIGN KEY (notice_id)
+            REFERENCES notice (notice_id),
+
+    CONSTRAINT uk_notice_reaction_notice_member
+        UNIQUE (notice_id, member_id)
+
+)ENGINE=InnoDB
+ DEFAULT CHARSET = utf8mb4
+ COLLATE = utf8mb4_unicode_ci;
+
+CREATE INDEX idx_notice_reaction_notice_status_type
+    ON notice_reaction (notice_id, status, reaction_type);
+
+CREATE INDEX idx_notice_reaction_member_status
+    ON notice_reaction (member_id, status);
+
+
 CREATE TABLE notice_comment (
     notice_comment_id BIGINT NOT NULL AUTO_INCREMENT,
     notice_id BIGINT NOT NULL,

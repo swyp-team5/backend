@@ -1,0 +1,17 @@
+DROP TABLE IF EXISTS `time_detail`;
+DROP TABLE IF EXISTS `day`;
+DROP TABLE IF EXISTS `week_schedule`;
+DROP TABLE IF EXISTS `notification_delivery`;
+DROP TABLE IF EXISTS `notification`;
+DROP TABLE IF EXISTS `fcm_token`;
+DROP TABLE IF EXISTS `notice_comment`;
+DROP TABLE IF EXISTS `notice_reaction`;
+DROP TABLE IF EXISTS `notice`;
+DROP TABLE IF EXISTS `member_terms_agreement`;
+DROP TABLE IF EXISTS `terms`;
+DROP TABLE IF EXISTS `crew_invitation`;
+DROP TABLE IF EXISTS `crew`;
+DROP TABLE IF EXISTS `profile_image`;
+DROP TABLE IF EXISTS `work_place`;
+DROP TABLE IF EXISTS `member_notification_setting`;
+DROP TABLE IF EXISTS `member`;

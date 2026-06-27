@@ -36,6 +36,7 @@
 - 사업장 공지사항 댓글 조회
 - 사업장 공지사항 댓글 수정
 - 사업장 공지사항 댓글 삭제
+- 사업장 공지사항 공감 선택/변경/취소
 - FCM 토큰 등록 또는 갱신
 - FCM 토큰 비활성화
 - FCM 푸시 수신 설정 조회/변경
@@ -1089,6 +1090,8 @@ OWNER
   "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
   "representative": true,
   "status": "ACTIVE",
+  "myReactionType": null,
+  "reactions": [],
   "createdAt": "2026-06-14T03:00:00",
   "updatedAt": "2026-06-14T03:00:00"
 }
@@ -1135,6 +1138,33 @@ OWNER, WORKER
       "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
       "representative": true,
       "status": "ACTIVE",
+      "myReactionType": "HEART",
+      "reactions": [
+        {
+          "reactionType": "HEART",
+          "count": 4
+        },
+        {
+          "reactionType": "CHECK",
+          "count": 6
+        },
+        {
+          "reactionType": "NEUTRAL",
+          "count": 2
+        },
+        {
+          "reactionType": "SMILE",
+          "count": 0
+        },
+        {
+          "reactionType": "KISS",
+          "count": 0
+        },
+        {
+          "reactionType": "PROUD",
+          "count": 1
+        }
+      ],
       "createdAt": "2026-06-14T03:00:00",
       "updatedAt": "2026-06-14T03:00:00"
     }
@@ -1152,6 +1182,8 @@ OWNER, WORKER
 - 근무자는 승인된 활성 크루로 소속된 사업장의 공지만 조회할 수 있다.
 - 삭제된 공지는 목록에 포함하지 않는다.
 - 기본 정렬은 최신 작성순이다.
+- `myReactionType`은 로그인한 회원이 선택한 공감이다. 선택한 공감이 없으면 `null`이다.
+- `reactions`는 6개 공감 타입의 현재 활성 집계이며, 집계가 0인 타입도 포함한다.
 
 ### 8.3 사업장 대표 공지 조회
 
@@ -1173,6 +1205,33 @@ Authorization: Bearer {accessToken}
     "content": "홈에서 노출할 대표 공지입니다.",
     "representative": true,
     "status": "ACTIVE",
+    "myReactionType": null,
+    "reactions": [
+      {
+        "reactionType": "HEART",
+        "count": 0
+      },
+      {
+        "reactionType": "CHECK",
+        "count": 0
+      },
+      {
+        "reactionType": "NEUTRAL",
+        "count": 0
+      },
+      {
+        "reactionType": "SMILE",
+        "count": 0
+      },
+      {
+        "reactionType": "KISS",
+        "count": 0
+      },
+      {
+        "reactionType": "PROUD",
+        "count": 0
+      }
+    ],
     "createdAt": "2026-06-14T03:00:00",
     "updatedAt": "2026-06-14T03:00:00"
   }
@@ -1202,7 +1261,154 @@ Authorization: Bearer {accessToken}
 
 응답 형식은 `8.1 사업장 공지 작성` 성공 응답과 동일하다.
 
-### 8.5 홈 대표 공지 조회
+### 8.5 공지 공감 선택/변경/취소
+
+근무자가 공지에 공감을 남긴다. 이미 같은 공감을 선택한 상태에서 다시 같은 공감을 요청하면 공감을 취소한다.
+
+```http
+PUT /api/notices/{noticeId}/reactions
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+WORKER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| noticeId | number | Y | 공감을 선택할 공지 ID |
+
+#### 요청 본문
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| reactionType | string | Y | 공감 종류. `HEART`, `CHECK`, `NEUTRAL`, `SMILE`, `KISS`, `PROUD` |
+
+#### 요청 예시
+
+```json
+{
+  "reactionType": "HEART"
+}
+```
+
+#### 성공 응답
+
+```json
+{
+  "noticeId": 1,
+  "myReactionType": "HEART",
+  "reactions": [
+    {
+      "reactionType": "HEART",
+      "count": 4
+    },
+    {
+      "reactionType": "CHECK",
+      "count": 6
+    },
+    {
+      "reactionType": "NEUTRAL",
+      "count": 2
+    },
+    {
+      "reactionType": "SMILE",
+      "count": 0
+    },
+    {
+      "reactionType": "KISS",
+      "count": 0
+    },
+    {
+      "reactionType": "PROUD",
+      "count": 1
+    }
+  ]
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 근무자만 공감을 선택할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 공지에만 공감을 선택할 수 있다.
+- 공감은 회원 1명이 공지 1개에 대해 최대 1개 타입만 선택할 수 있다.
+- 여러 공감 타입을 동시에 선택할 수 없다. 서버는 `notice_id + member_id` 기준으로 활성 공감 0개 또는 1개만 유지한다.
+- 기존 공감이 없는 상태에서 요청하면 새 공감을 생성한다.
+- 기존 공감과 다른 공감을 요청하면 실패하지 않고 기존 row를 재사용하여 공감 종류를 변경한다.
+- 기존 공감과 같은 공감을 요청하면 취소 처리되어 `myReactionType`은 `null`이 된다.
+- 공감 회원 ID는 access token의 `memberId`를 사용하며 `member` 테이블과 FK를 걸지 않는 비정규화 컬럼으로 저장한다.
+
+#### 공감 변경 예시
+
+```text
+공감 없음 + HEART 요청 -> HEART 활성
+HEART 활성 + CHECK 요청 -> CHECK로 변경
+CHECK 활성 + CHECK 요청 -> 공감 취소
+공감 취소 상태 + PROUD 요청 -> PROUD 활성
+```
+
+### 8.6 공지 공감 취소
+
+근무자가 현재 선택한 공감을 취소한다. 이미 선택한 공감이 없어도 성공 응답을 반환한다.
+
+```http
+DELETE /api/notices/{noticeId}/reactions
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+WORKER
+```
+
+#### 성공 응답
+
+```json
+{
+  "noticeId": 1,
+  "myReactionType": null,
+  "reactions": [
+    {
+      "reactionType": "HEART",
+      "count": 3
+    },
+    {
+      "reactionType": "CHECK",
+      "count": 6
+    },
+    {
+      "reactionType": "NEUTRAL",
+      "count": 2
+    },
+    {
+      "reactionType": "SMILE",
+      "count": 0
+    },
+    {
+      "reactionType": "KISS",
+      "count": 0
+    },
+    {
+      "reactionType": "PROUD",
+      "count": 1
+    }
+  ]
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 근무자만 공감을 취소할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 공지에 대해서만 공감을 취소할 수 있다.
+- 현재 활성 공감이 없으면 상태 변경 없이 현재 공감 집계만 반환한다.
+
+### 8.7 홈 대표 공지 조회
 
 홈 화면에서 대표 공지만 가볍게 노출하기 위한 전용 API다. 기존 대표 공지 조회 API보다 응답 필드가 작다.
 
@@ -1252,7 +1458,7 @@ OWNER, WORKER
 - 대표 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
 
-### 8.6 홈 최신 공지 조회
+### 8.8 홈 최신 공지 조회
 
 홈 화면에서 가장 최근 작성된 공지 1건을 가볍게 노출하기 위한 전용 API다. 대표 공지 여부와 무관하게 활성 공지 중 최신 1건을 반환한다.
 
@@ -1304,7 +1510,7 @@ OWNER, WORKER
 - 최신 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
 
-### 8.7 공지 수정
+### 8.9 공지 수정
 
 ```http
 PATCH /api/notices/{noticeId}
@@ -1326,7 +1532,7 @@ OWNER
 - 사장님 본인이 소유한 사업장의 공지만 수정할 수 있다.
 - 수정으로 대표 공지를 지정하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
 
-### 8.8 공지 삭제
+### 8.10 공지 삭제
 
 ```http
 DELETE /api/notices/{noticeId}
@@ -1352,7 +1558,7 @@ OWNER
 - 삭제는 물리 삭제가 아니라 `DELETED` 상태와 `deleted_at`으로 처리한다.
 - 대표 공지를 삭제하면 해당 사업장은 대표 공지가 없는 상태가 된다.
 
-### 8.9 공지 댓글 작성
+### 8.11 공지 댓글 작성
 
 ```http
 POST /api/notices/{noticeId}/comments
@@ -1399,7 +1605,7 @@ OWNER
 }
 ```
 
-### 8.10 공지 댓글 조회
+### 8.12 공지 댓글 조회
 
 ```http
 GET /api/notices/{noticeId}/comments?cursorId=10&size=20
@@ -1440,7 +1646,7 @@ Authorization: Bearer {accessToken}
 - 다음 페이지가 없으면 `nextCursorId`는 null이고 `hasNext`는 false다.
 - 삭제된 댓글은 조회하지 않는다.
 
-### 8.11 공지 댓글 수정
+### 8.13 공지 댓글 수정
 
 ```http
 PATCH /api/notices/{noticeId}/comments/{commentId}
@@ -1454,9 +1660,9 @@ Content-Type: application/json
 OWNER
 ```
 
-요청 본문과 응답 형식은 `8.9 공지 댓글 작성`과 동일하다.
+요청 본문과 응답 형식은 `8.11 공지 댓글 작성`과 동일하다.
 
-### 8.12 공지 댓글 삭제
+### 8.14 공지 댓글 삭제
 
 ```http
 DELETE /api/notices/{noticeId}/comments/{commentId}
@@ -1481,7 +1687,7 @@ OWNER
 | ---: | --- | --- |
 | 400 | 4000 | 요청 본문, 페이지, 커서 검증 실패 |
 | 401 | 4002 | access token 없음 또는 유효하지 않음 |
-| 403 | 4003 | OWNER 권한이 아니거나 사업장 공지 접근 권한 없음 |
+| 403 | 4003 | OWNER/WORKER 권한이 아니거나 사업장 공지 접근 권한 없음 |
 | 404 | 4004 | 사업장, 공지, 댓글을 찾을 수 없음 |
 
 ## 9. 알림 API
@@ -1886,6 +2092,56 @@ DELETED
 
 ```text
 idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, notice_comment_id)
+```
+
+### 11.3 notice_reaction
+
+`notice_reaction`은 근무자가 공지에 선택한 공감을 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notice_reaction_id | BIGINT | N | PK |
+| notice_id | BIGINT | N | 공지 ID, `notice` FK |
+| member_id | BIGINT | N | 공감을 선택한 회원 ID 스냅샷, FK 없음 |
+| reaction_type | VARCHAR(20) | N | 공감 종류 |
+| status | VARCHAR(20) | N | 공감 상태 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 취소 시각 |
+
+#### 공감 종류
+
+```text
+HEART
+CHECK
+NEUTRAL
+SMILE
+KISS
+PROUD
+```
+
+#### 상태값
+
+```text
+ACTIVE
+DELETED
+```
+
+#### 제약조건
+
+- `notice_id`는 `notice.notice_id`를 참조한다.
+- `member_id`는 access token의 `memberId`를 저장하는 비정규화 컬럼이며 `member` FK를 걸지 않는다.
+- `unique(notice_id, member_id)`로 회원 1명이 공지 1개에 대해 하나의 공감 row만 갖도록 보장한다.
+- 따라서 한 회원이 같은 공지에 여러 공감 타입을 동시에 활성화할 수 없다.
+- 같은 공감을 다시 누르거나 취소 API를 호출하면 row를 물리 삭제하지 않고 `DELETED` 상태와 `deleted_at`으로 처리한다.
+- 취소 후 다시 공감하면 기존 row를 재사용하여 `ACTIVE` 상태로 복구한다.
+
+#### 인덱스
+
+```text
+uk_notice_reaction_notice_member (notice_id, member_id)
+idx_notice_reaction_notice_status_type (notice_id, status, reaction_type)
+idx_notice_reaction_member_status (member_id, status)
 ```
 
 ## 12. 알림 DB 정책

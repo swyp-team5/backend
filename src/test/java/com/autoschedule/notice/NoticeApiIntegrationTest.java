@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -154,6 +155,153 @@ class NoticeApiIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.writerMemberId").value(owner.getId()))
                 .andExpect(jsonPath("$.writerMemberName").value("owner"));
+    }
+
+    /**
+     * 근무자는 공지에 공감을 남기고 다른 공감으로 변경할 수 있다.
+     */
+    @Test
+    void workerCreatesAndChangesNoticeReaction() throws Exception {
+        JsonNode notice = createNotice(owner, workPlace.getId(), "공감 공지", "공감해주세요.", false);
+        long noticeId = notice.get("noticeId").asLong();
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody("HEART")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.noticeId").value(noticeId))
+                .andExpect(jsonPath("$.myReactionType").value("HEART"))
+                .andExpect(jsonPath("$.reactions[0].reactionType").value("HEART"))
+                .andExpect(jsonPath("$.reactions[0].count").value(1));
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody("CHECK")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myReactionType").value("CHECK"))
+                .andExpect(jsonPath("$.reactions[0].reactionType").value("HEART"))
+                .andExpect(jsonPath("$.reactions[0].count").value(0))
+                .andExpect(jsonPath("$.reactions[1].reactionType").value("CHECK"))
+                .andExpect(jsonPath("$.reactions[1].count").value(1));
+
+        Integer activeCount = jdbcTemplate.queryForObject(
+                "select count(*) from notice_reaction where notice_id = ? and member_id = ? and status = 'ACTIVE'",
+                Integer.class,
+                noticeId,
+                worker.getId()
+        );
+        assertThat(activeCount).isOne();
+    }
+
+    /**
+     * 근무자가 같은 공감을 다시 누르면 공감이 취소된다.
+     */
+    @Test
+    void workerTogglesSameNoticeReactionToCancel() throws Exception {
+        JsonNode notice = createNotice(owner, workPlace.getId(), "공감 취소 공지", "공감해주세요.", false);
+        long noticeId = notice.get("noticeId").asLong();
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody("PROUD")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myReactionType").value("PROUD"));
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody("PROUD")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myReactionType").doesNotExist())
+                .andExpect(jsonPath("$.reactions[5].reactionType").value("PROUD"))
+                .andExpect(jsonPath("$.reactions[5].count").value(0));
+
+        Integer deletedCount = jdbcTemplate.queryForObject(
+                "select count(*) from notice_reaction where notice_id = ? and member_id = ? and status = 'DELETED'",
+                Integer.class,
+                noticeId,
+                worker.getId()
+        );
+        assertThat(deletedCount).isOne();
+    }
+
+    /**
+     * 근무자는 공지 공감을 명시적으로 취소할 수 있다.
+     */
+    @Test
+    void workerDeletesNoticeReaction() throws Exception {
+        JsonNode notice = createNotice(owner, workPlace.getId(), "공감 삭제 공지", "공감해주세요.", false);
+        long noticeId = notice.get("noticeId").asLong();
+        react(worker, noticeId, "KISS");
+
+        mockMvc.perform(delete("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myReactionType").doesNotExist())
+                .andExpect(jsonPath("$.reactions[4].reactionType").value("KISS"))
+                .andExpect(jsonPath("$.reactions[4].count").value(0));
+    }
+
+    /**
+     * 공지 상세 응답에는 공감 집계와 내 공감이 포함된다.
+     */
+    @Test
+    void workerReadsNoticeDetailWithReactionSummary() throws Exception {
+        JsonNode notice = createNotice(owner, workPlace.getId(), "공감 조회 공지", "공감해주세요.", false);
+        long noticeId = notice.get("noticeId").asLong();
+        react(worker, noticeId, "SMILE");
+
+        mockMvc.perform(get("/api/notices/{noticeId}", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myReactionType").value("SMILE"))
+                .andExpect(jsonPath("$.reactions.length()").value(6))
+                .andExpect(jsonPath("$.reactions[3].reactionType").value("SMILE"))
+                .andExpect(jsonPath("$.reactions[3].count").value(1));
+    }
+
+    /**
+     * 사장님과 소속되지 않은 근무자는 공감할 수 없다.
+     */
+    @Test
+    void onlyApprovedWorkerCanReactNotice() throws Exception {
+        JsonNode notice = createNotice(owner, workPlace.getId(), "공감 권한 공지", "공감해주세요.", false);
+        long noticeId = notice.get("noticeId").asLong();
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody("HEART")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("4003"));
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsiderWorker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody("HEART")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("4003"));
+    }
+
+    /**
+     * 공지 공감 종류는 필수로 입력해야 한다.
+     */
+    @Test
+    void reactionTypeIsRequired() throws Exception {
+        JsonNode notice = createNotice(owner, workPlace.getId(), "공감 검증 공지", "공감해주세요.", false);
+        long noticeId = notice.get("noticeId").asLong();
+
+        mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"))
+                .andExpect(jsonPath("$.errors[0].field").value("reactionType"))
+                .andExpect(jsonPath("$.errors[0].message").value("공지 공감 종류는 필수입니다."));
     }
 
     /**
@@ -604,6 +752,18 @@ class NoticeApiIntegrationTest {
         return objectMapper.readTree(response);
     }
 
+    private JsonNode react(Member requester, Long noticeId, String reactionType) throws Exception {
+        String response = mockMvc.perform(put("/api/notices/{noticeId}/reactions", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(requester))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reactionBody(reactionType)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response);
+    }
+
     private JsonNode createComment(Member requester, Long noticeId, String content) throws Exception {
         String response = mockMvc.perform(post("/api/notices/{noticeId}/comments", noticeId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(requester))
@@ -632,6 +792,14 @@ class NoticeApiIntegrationTest {
                   "content": "%s"
                 }
                 """.formatted(content);
+    }
+
+    private String reactionBody(String reactionType) {
+        return """
+                {
+                  "reactionType": "%s"
+                }
+                """.formatted(reactionType);
     }
 
     private void registerFcmToken(Member member, String deviceId, String token) {
