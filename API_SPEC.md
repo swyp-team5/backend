@@ -780,9 +780,10 @@ Authorization: Bearer {ACCESS_TOKEN}
 
 ## 6.8 사업장 API
 
-### 6.8.1 내 사업장 목록 조회
+### 6.8.1 홈 화면 매장 드롭다운 목록 조회
 
-홈 화면의 매장 선택 드롭다운에서 사용할 현재 로그인 회원의 사업장 목록을 조회한다.
+홈 화면 상단의 매장 선택 드롭다운에서 사용할 현재 로그인 회원의 사업장 목록을 조회한다.
+사장님과 근무자는 여러 매장에 속할 수 있으므로, 앱은 이 API로 선택 가능한 매장 목록을 먼저 조회한 뒤 선택된 `workPlaceId` 기준으로 공지, 스케줄, 출퇴근 등 홈 데이터를 조회한다.
 
 ```http
 GET /api/work-places/me
@@ -817,13 +818,28 @@ OWNER, WORKER
 }
 ```
 
+#### 홈 화면 사용 흐름
+
+1. 앱 진입 후 access token으로 `GET /api/work-places/me`를 호출한다.
+2. `workPlaces` 배열을 홈 화면 매장 드롭다운 옵션으로 렌더링한다.
+3. 사용자가 매장을 선택하면 해당 항목의 `workPlaceId`를 현재 선택 매장 ID로 저장한다.
+4. 선택된 `workPlaceId`로 매장별 홈 데이터를 조회한다.
+
+```http
+GET /api/home/work-places/{workPlaceId}/representative-notice
+GET /api/home/work-places/{workPlaceId}/latest-notice
+GET /api/work-places/{workPlaceId}/notices?page=0&size=20
+```
+
+5. 사용자가 드롭다운에서 다른 매장을 선택하면 새 `workPlaceId`로 홈 데이터를 다시 조회한다.
+
 #### 응답 필드
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| workPlaces | array | 현재 회원이 홈 화면에서 선택할 수 있는 사업장 목록 |
-| workPlaces[].workPlaceId | number | 사업장 ID |
-| workPlaces[].name | string | 사업장 이름 |
+| workPlaces | array | 현재 회원이 홈 화면 드롭다운에서 선택할 수 있는 사업장 목록 |
+| workPlaces[].workPlaceId | number | 사업장 ID. 드롭다운 선택 후 매장별 API 호출에 사용하는 기준값 |
+| workPlaces[].name | string | 사업장 이름. 드롭다운에 노출할 매장명 |
 | workPlaces[].size | string | 매장 규모 |
 | workPlaces[].roadAddress | string | 도로명 주소 |
 | workPlaces[].detailAddress | string/null | 상세 주소 |
@@ -837,12 +853,15 @@ OWNER, WORKER
 #### 주요 비즈니스 규칙
 
 - OWNER, WORKER 모두 같은 API를 사용한다.
+- 이 API는 홈 화면의 매장 드롭다운 옵션을 구성하기 위한 API다.
 - 회원이 `crew`에서 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장만 반환한다.
 - `work_place.status = ACTIVE`, `work_place.deleted_at is null`인 사업장만 반환한다.
 - 사장님도 `crew_role = OWNER` 소속 기준으로 조회한다.
 - 근무자는 여러 사업장에 소속될 수 있으며, 승인된 활성 소속만 반환한다.
 - 소속된 활성 사업장이 없으면 빈 배열을 반환한다.
 - 정렬 기준은 `workPlaceId ASC`다.
+- 서버는 기본 선택 매장을 별도로 판단하지 않는다. 클라이언트는 보통 `workPlaces[0]`을 초기 선택값으로 사용하거나, 로컬에 마지막 선택 매장이 있으면 그 값을 우선 사용할 수 있다.
+- 공지사항은 매장별 데이터이므로 선택된 `workPlaceId`가 바뀌면 공지 관련 API도 다시 호출해야 한다.
 - 서버는 `crew`와 `work_place`를 fetch join으로 한 번에 조회하여 매장 목록 조회에서 N+1 쿼리를 발생시키지 않는다.
 
 #### 주요 에러
