@@ -21,6 +21,7 @@
 - 프로필 이미지 업로드 확정
 - 프로필 이미지 수정/교체
 - 프로필 이미지 삭제
+- 내 사업장 목록 조회
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
@@ -776,6 +777,79 @@ Authorization: Bearer {ACCESS_TOKEN}
 | ---: | --- | --- |
 | 401 | 4002 | access token 누락, 만료, 서명 오류 |
 | 409 | 4005 | 탈퇴 취소 가능 기간 경과, 이미 영구 탈퇴 완료된 회원 |
+
+## 6.8 사업장 API
+
+### 6.8.1 내 사업장 목록 조회
+
+홈 화면의 매장 선택 드롭다운에서 사용할 현재 로그인 회원의 사업장 목록을 조회한다.
+
+```http
+GET /api/work-places/me
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER, WORKER
+```
+
+#### 성공 응답
+
+```json
+{
+  "workPlaces": [
+    {
+      "workPlaceId": 1,
+      "name": "매장명1",
+      "size": "FIVE_TO_NINE",
+      "roadAddress": "서울시 강남구 ...",
+      "detailAddress": "3층",
+      "ownerMemberId": 1,
+      "crewId": 10,
+      "crewRole": "OWNER",
+      "joinStatus": "APPROVED",
+      "crewStatus": "ACTIVE",
+      "workPlaceStatus": "ACTIVE"
+    }
+  ]
+}
+```
+
+#### 응답 필드
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaces | array | 현재 회원이 홈 화면에서 선택할 수 있는 사업장 목록 |
+| workPlaces[].workPlaceId | number | 사업장 ID |
+| workPlaces[].name | string | 사업장 이름 |
+| workPlaces[].size | string | 매장 규모 |
+| workPlaces[].roadAddress | string | 도로명 주소 |
+| workPlaces[].detailAddress | string/null | 상세 주소 |
+| workPlaces[].ownerMemberId | number | 사업장을 생성한 사장님 회원 ID |
+| workPlaces[].crewId | number | 현재 회원의 해당 사업장 crew ID |
+| workPlaces[].crewRole | string | 현재 회원의 해당 사업장 역할. `OWNER`, `WORKER` |
+| workPlaces[].joinStatus | string | 현재 회원의 해당 사업장 가입 상태. 현재 응답에는 `APPROVED`만 포함 |
+| workPlaces[].crewStatus | string | 현재 회원의 해당 사업장 소속 상태. 현재 응답에는 `ACTIVE`만 포함 |
+| workPlaces[].workPlaceStatus | string | 사업장 상태. 현재 응답에는 `ACTIVE`만 포함 |
+
+#### 주요 비즈니스 규칙
+
+- OWNER, WORKER 모두 같은 API를 사용한다.
+- 회원이 `crew`에서 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장만 반환한다.
+- `work_place.status = ACTIVE`, `work_place.deleted_at is null`인 사업장만 반환한다.
+- 사장님도 `crew_role = OWNER` 소속 기준으로 조회한다.
+- 근무자는 여러 사업장에 소속될 수 있으며, 승인된 활성 소속만 반환한다.
+- 소속된 활성 사업장이 없으면 빈 배열을 반환한다.
+- 정렬 기준은 `workPlaceId ASC`다.
+- 서버는 `crew`와 `work_place`를 fetch join으로 한 번에 조회하여 매장 목록 조회에서 N+1 쿼리를 발생시키지 않는다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
 
 ## 7. 크루 초대 API
 
@@ -2020,6 +2094,29 @@ idx_crew_invitation_work_place_status (work_place_id, status)
 idx_crew_invitation_invite_code_status (invite_code, status)
 idx_crew_invitation_expires_at_status (expires_at, status)
 ```
+
+### 10.2 crew 조회 인덱스
+
+`crew`는 회원이 여러 사업장에 소속되는 구조를 표현한다. 홈 화면의 내 사업장 목록 조회는 로그인 회원의 승인된 활성 소속을 기준으로 사업장을 조회한다.
+
+#### 주요 조회 조건
+
+```text
+member_id = ?
+join_status = 'APPROVED'
+status = 'ACTIVE'
+deleted_at is null
+```
+
+#### 인덱스
+
+```text
+idx_crew_member_join_status_status_deleted_work_place (member_id, join_status, status, deleted_at, work_place_id)
+```
+
+- `GET /api/work-places/me` 조회에서 사용한다.
+- `work_place`는 PK인 `work_place_id`로 조인한다.
+- 백엔드는 `crew`와 `work_place`를 fetch join으로 조회하여 매장 목록 응답 생성 시 N+1 쿼리를 방지한다.
 
 ## 11. 공지사항 DB 정책
 

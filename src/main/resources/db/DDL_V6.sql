@@ -148,6 +148,9 @@ CREATE TABLE crew (
  DEFAULT CHARSET = utf8mb4
  COLLATE = utf8mb4_unicode_ci;
 
+CREATE INDEX idx_crew_member_join_status_status_deleted_work_place
+    ON crew (member_id, join_status, status, deleted_at, work_place_id);
+
 CREATE TABLE crew_invitation (
     crew_invitation_id BIGINT NOT NULL AUTO_INCREMENT,
     work_place_id BIGINT NOT NULL,
