@@ -38,6 +38,7 @@
 - 사업장 공지사항 댓글 삭제
 - FCM 토큰 등록 또는 갱신
 - FCM 토큰 비활성화
+- FCM 푸시 수신 설정 조회/변경
 - 알림함 조회
 - 알림 단건 읽음 처리
 - 모든 알림 읽음 처리
@@ -1554,6 +1555,62 @@ Authorization: Bearer {accessToken}
 - 토큰이 없어도 idempotent하게 `204 No Content`를 반환한다.
 - 다른 회원의 같은 `deviceId` 토큰에는 영향을 주지 않는다.
 
+### 9.2.1 FCM 푸시 수신 설정 조회/변경
+
+앱 내부 기본 알림은 실제 기기 푸시가 아니라 알림함 조회 데이터이므로 항상 저장한다.
+FCM 푸시는 실제 기기 알림을 발생시키므로 회원이 수신 여부를 직접 변경할 수 있다.
+
+#### 조회
+
+```http
+GET /api/members/me/notification-settings
+Authorization: Bearer {accessToken}
+```
+
+##### 성공 응답
+
+```json
+{
+  "fcmPushEnabled": true
+}
+```
+
+#### 변경
+
+```http
+PATCH /api/members/me/notification-settings
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+##### 요청 Body
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| fcmPushEnabled | boolean | Y | FCM 푸시 수신 여부 |
+
+```json
+{
+  "fcmPushEnabled": false
+}
+```
+
+##### 성공 응답
+
+```json
+{
+  "fcmPushEnabled": false
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- JWT 인증이 필요하다.
+- OWNER, WORKER 모두 호출할 수 있다.
+- 설정 row가 없으면 조회 시 기본값 `true`로 생성한다.
+- `fcmPushEnabled=false`이면 `PushPolicy.PUSH` 알림도 앱 내부 알림만 저장하고 FCM delivery를 생성하지 않는다.
+- `fcmPushEnabled=true`이고 활성 FCM 토큰이 있는 경우에만 FCM delivery 생성과 발송 이벤트 발행이 가능하다.
+
 ### 9.3 알림함 조회
 
 ```http
@@ -1692,14 +1749,14 @@ Content-Type: application/json
 - 다른 회원 ID를 요청으로 받지 않는다.
 - `notification_type`은 `FCM_TEST`, `push_policy`는 `PUSH`로 저장한다.
 - 기존 알림 발송 파이프라인과 동일하게 `notification`, `notification_delivery`를 생성하고 커밋 이후 FCM 발송을 시도한다.
-- 활성 FCM 토큰이 없으면 앱 내 알림만 생성되고 FCM delivery는 생성되지 않는다.
+- 활성 FCM 토큰이 없거나 회원의 FCM 푸시 수신 설정이 꺼져 있으면 앱 내 알림만 생성되고 FCM delivery는 생성되지 않는다.
 
 ### 9.7 내부 알림 발송 정책
 
 도메인 기능은 공개 API가 아니라 내부 서비스 `NotificationCommandService.sendToMember(...)`를 호출해 알림을 생성한다.
 
 - `IN_APP_ONLY`: `notification`만 저장하고 FCM 발송을 시도하지 않는다.
-- `PUSH`: `notification` 저장 후 수신 회원의 활성 `fcm_token`마다 FCM 발송을 시도한다.
+- `PUSH`: `notification` 저장 후 수신 회원의 FCM 푸시 수신 설정이 켜져 있고 활성 `fcm_token`이 있으면 FCM 발송을 시도한다.
 - FCM 발송 시도 결과는 `notification_delivery`에 저장한다.
 - Firebase 설정이 비활성화된 환경에서는 FCM 발송을 시도하지 않고 실패 delivery를 기록한다.
 - Firebase가 등록되지 않은 토큰이라고 응답하면 해당 `fcm_token`을 `INACTIVE`로 변경한다.
@@ -1872,7 +1929,31 @@ idx_fcm_token_member_status (member_id, status)
 idx_fcm_token_token (token)
 ```
 
-### 12.2 notification
+### 12.2 member_notification_setting
+
+`member_notification_setting`은 회원별 FCM 푸시 수신 설정을 저장한다. 앱 내부 기본 알림은 이 설정과 무관하게 항상 `notification`에 저장된다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| member_notification_setting_id | BIGINT | N | PK |
+| member_id | BIGINT | N | 회원 ID, `member` FK |
+| fcm_push_enabled | BIT(1) | N | FCM 푸시 수신 여부 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+
+#### 제약조건
+
+- `member_id`는 `member.member_id`를 참조한다.
+- `member_id`는 UNIQUE로 회원당 설정 1건만 허용한다.
+- 설정 row가 없는 기존 회원은 애플리케이션에서 기본값 `true`로 취급한다.
+
+#### 인덱스
+
+```text
+idx_member_notification_setting_member_id (member_id)
+```
+
+### 12.3 notification
 
 `notification`은 회원별 앱 내 알림함 데이터를 저장한다. FCM 앱 푸시 대상 알림도 먼저 이 테이블에 저장된다.
 
@@ -1909,7 +1990,7 @@ idx_notification_receiver_status_created (receiver_member_id, status, created_at
 idx_notification_receiver_read (receiver_member_id, read_at)
 ```
 
-### 12.3 notification_delivery
+### 12.4 notification_delivery
 
 `notification_delivery`는 FCM 앱 푸시 발송 시도와 결과 이력을 저장한다.
 
@@ -1949,7 +2030,7 @@ idx_notification_delivery_status_attempted (status, attempted_at)
 idx_notification_delivery_fcm_token (fcm_token_id)
 ```
 
-### 12.4 FCM 운영 설정
+### 12.5 FCM 운영 설정
 
 Firebase Admin SDK는 Java 서버 SDK를 사용한다. 서버는 기본적으로 FCM 발송 비활성 상태로 기동한다.
 

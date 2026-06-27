@@ -6,12 +6,14 @@ import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notification.domain.FcmToken;
 import com.autoschedule.notification.domain.FcmTokenStatus;
+import com.autoschedule.notification.domain.MemberNotificationSetting;
 import com.autoschedule.notification.domain.Notification;
 import com.autoschedule.notification.domain.NotificationDelivery;
 import com.autoschedule.notification.domain.PushPolicy;
 import com.autoschedule.notification.dto.NotificationSendCommand;
 import com.autoschedule.notification.event.NotificationPushRequestedEvent;
 import com.autoschedule.notification.repository.FcmTokenRepository;
+import com.autoschedule.notification.repository.MemberNotificationSettingRepository;
 import com.autoschedule.notification.repository.NotificationDeliveryRepository;
 import com.autoschedule.notification.repository.NotificationRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -21,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +40,7 @@ public class NotificationCommandService {
 
     private final MemberRepository memberRepository;
     private final FcmTokenRepository fcmTokenRepository;
+    private final MemberNotificationSettingRepository memberNotificationSettingRepository;
     private final NotificationRepository notificationRepository;
     private final NotificationDeliveryRepository notificationDeliveryRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -124,10 +128,14 @@ public class NotificationCommandService {
      * 수신자별 활성 FCM 토큰마다 PENDING delivery를 생성한다.
      */
     private List<Long> createPendingDeliveries(List<Notification> notifications, List<Long> receiverMemberIds) {
+        Set<Long> fcmPushEnabledMemberIds = findFcmPushEnabledMemberIds(receiverMemberIds);
         Map<Long, List<FcmToken>> fcmTokensByMemberId = findActiveFcmTokensByMemberId(receiverMemberIds);
         List<NotificationDelivery> deliveries = new ArrayList<>();
         for (Notification notification : notifications) {
             Long receiverMemberId = notification.getReceiverMember().getId();
+            if (!fcmPushEnabledMemberIds.contains(receiverMemberId)) {
+                continue;
+            }
             List<FcmToken> fcmTokens = fcmTokensByMemberId.getOrDefault(receiverMemberId, List.of());
             for (FcmToken fcmToken : fcmTokens) {
                 deliveries.add(NotificationDelivery.createFcmPending(
@@ -163,6 +171,23 @@ public class NotificationCommandService {
     /**
      * 생성된 delivery가 있을 때만 커밋 이후 FCM 발송 이벤트를 발행한다.
      */
+    /**
+     * FCM 푸시 수신을 허용한 회원 ID만 추린다. 설정이 없는 기존 회원은 기본 허용으로 본다.
+     */
+    private Set<Long> findFcmPushEnabledMemberIds(List<Long> receiverMemberIds) {
+        Map<Long, MemberNotificationSetting> settingsByMemberId = memberNotificationSettingRepository
+                .findByMember_IdIn(receiverMemberIds)
+                .stream()
+                .collect(Collectors.toMap(setting -> setting.getMember().getId(), Function.identity()));
+
+        return receiverMemberIds.stream()
+                .filter(memberId -> {
+                    MemberNotificationSetting setting = settingsByMemberId.get(memberId);
+                    return setting == null || setting.isFcmPushEnabled();
+                })
+                .collect(Collectors.toSet());
+    }
+
     private void publishPushEventIfNeeded(List<Long> deliveryIds) {
         if (!deliveryIds.isEmpty()) {
             eventPublisher.publishEvent(new NotificationPushRequestedEvent(deliveryIds));

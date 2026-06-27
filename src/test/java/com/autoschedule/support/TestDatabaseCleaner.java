@@ -22,6 +22,7 @@ public final class TestDatabaseCleaner {
             "crew",
             "profile_image",
             "work_place",
+            "member_notification_setting",
             "member"
     };
 

@@ -20,6 +20,32 @@ CREATE TABLE member (
  DEFAULT CHARSET = utf8mb4
  COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE member_notification_setting (
+    member_notification_setting_id BIGINT NOT NULL AUTO_INCREMENT,
+    member_id BIGINT NOT NULL,
+    fcm_push_enabled BIT(1) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (member_notification_setting_id),
+
+    CONSTRAINT fk_member_notification_setting_member
+        FOREIGN KEY (member_id)
+            REFERENCES member (member_id),
+
+    CONSTRAINT uk_member_notification_setting_member
+        UNIQUE (member_id),
+
+    CONSTRAINT chk_member_notification_setting_fcm_push_enabled
+        CHECK (fcm_push_enabled IN (0, 1))
+
+)ENGINE=InnoDB
+ DEFAULT CHARSET = utf8mb4
+ COLLATE = utf8mb4_unicode_ci;
+
+CREATE INDEX idx_member_notification_setting_member_id
+    ON member_notification_setting (member_id);
+
 CREATE TABLE work_place (
     work_place_id BIGINT NOT NULL AUTO_INCREMENT,
     owner_member_id BIGINT NOT NULL,

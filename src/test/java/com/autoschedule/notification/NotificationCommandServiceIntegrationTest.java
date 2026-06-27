@@ -175,6 +175,48 @@ class NotificationCommandServiceIntegrationTest {
     /**
      * 여러 회원에게 PUSH 알림을 보낼 때 수신자와 FCM 토큰을 회원별로 반복 조회하지 않는다.
      */
+    /**
+     * 회원이 FCM 푸시 수신을 끈 경우 앱 내부 알림만 저장하고 FCM delivery는 만들지 않는다.
+     */
+    @Test
+    void sendPushNotificationWhenMemberDisablesFcmPushStoresOnlyInAppNotification() {
+        saveFcmToken(worker, "worker-device", "fcm-token");
+        jdbcTemplate.update(
+                """
+                        insert into member_notification_setting
+                            (member_id, fcm_push_enabled, created_at, updated_at)
+                        values (?, false, now(), now())
+                        """,
+                worker.getId()
+        );
+
+        Long notificationId = notificationCommandService.sendToMember(
+                worker.getId(),
+                new NotificationSendCommand(
+                        NotificationType.NOTICE,
+                        PushPolicy.PUSH,
+                        "공지 알림",
+                        "새 공지가 등록되었습니다.",
+                        Map.of("noticeId", "1")
+                )
+        );
+
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification where notification_id = ? and receiver_member_id = ?",
+                Integer.class,
+                notificationId,
+                worker.getId()
+        );
+        Integer deliveryCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification_delivery where notification_id = ?",
+                Integer.class,
+                notificationId
+        );
+        assertThat(notificationCount).isOne();
+        assertThat(deliveryCount).isZero();
+        verify(fcmDeliveryProcessor, timeout(300).times(0)).process(any());
+    }
+
     @Test
     void sendPushNotificationToMembersCreatesNotificationsAndDeliveriesWithBatchLookup() {
         Member secondWorker = saveMember("command-worker-subject-2", "01020000001");
