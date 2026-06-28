@@ -64,7 +64,8 @@ public class WorkerSelectService {
         );
 
         // 2. 중복 제출 검증
-        validateAlreadySubmitted(member.getId()); // 근무자가 이미 불가능한 일자를 제출했는지 검증. -> 이미 한번 제출하면 재 제출은 불가하다.
+        // 근무자가 이미 불가능한 일자를 제출했는지 검증. -> 이미 한번 제출하면 재 제출은 불가하다.
+        validateAlreadySubmitted(member.getId(), workPlace.getId(), request.weekScheduleId());
 
         List<Long> timeDetailIds = request.timeDetails(); // 중복이 포함된 원본 timeDetails
         List<Long> uniqueTimeDetailIds = timeDetailIds.stream()
@@ -180,11 +181,14 @@ public class WorkerSelectService {
     /**
      * 이미 근무 불가 정보를 제출했는지 확인한다.
      */
-    private void validateAlreadySubmitted(Long memberId) {
-        boolean exists = workerUnavailableRepository.existsByMemberIdAndStatusAndDeletedAtIsNull(
-                memberId,
-                WorkerUnavailableStatus.ACTIVE
-        );
+    private void validateAlreadySubmitted(Long memberId, Long workPlaceId, Long weekScheduleId) {
+        boolean exists = workerUnavailableRepository
+                .existsByMemberIdAndTimeDetail_Day_WeekSchedule_IdAndTimeDetail_Day_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
+                        memberId,
+                        weekScheduleId,
+                        workPlaceId,
+                        WorkerUnavailableStatus.ACTIVE
+                );
 
         if (exists) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");

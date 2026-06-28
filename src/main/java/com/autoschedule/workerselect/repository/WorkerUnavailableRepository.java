@@ -32,6 +32,16 @@ public interface WorkerUnavailableRepository extends JpaRepository<WorkerUnavail
     );
 
     /**
+     * 회원이 특정 사업장의 주간 스케줄에 이미 근무 불가 정보를 제출했는지 확인한다.
+     */
+    boolean existsByMemberIdAndTimeDetail_Day_WeekSchedule_IdAndTimeDetail_Day_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
+            Long memberId,
+            Long weekScheduleId,
+            Long workPlaceId,
+            WorkerUnavailableStatus status
+    );
+
+    /**
      * 회원이 제출한 활성 상태의 근무 불가 타임 목록을 조회한다.
      */
     List<WorkerUnavailable> findByMemberIdAndStatusAndDeletedAtIsNull(

@@ -9,6 +9,9 @@ import java.util.List;
  */
 public record WorkerSelectRequest(
 
+        @NotNull(message = "weekScheduleId는 필수입니다.")
+        Long weekScheduleId,
+
         @NotNull(message = "timeDetails는 필수입니다.")
         List<Long> timeDetails
 ) {
