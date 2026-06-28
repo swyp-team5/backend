@@ -3785,6 +3785,7 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
+  "weekScheduleId": 1,
   "timeDetails": [
     1,
     2,
@@ -3797,9 +3798,10 @@ Authorization: Bearer {accessToken}
 
 ### HTTP Body 필드 설명
 
-| 필드명 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| timeDetails | List | O | 선택한 근무 불가 타임 ID 목록 |
+| 필드명 | 타입   | 필수 | 설명                           |
+| --- |------| --- |------------------------------|
+| weekScheduleId | Long | O | 선택한 근무 불가 타임 ID 목록의 주차스케줄 ID |
+| timeDetails | List | O | 선택한 근무 불가 타임 ID 목록           |
 
 ---
 
@@ -3807,6 +3809,7 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
+  "weekScheduleId": 1,
   "timeDetails": []
 }
 ```
