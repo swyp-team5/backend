@@ -27,6 +27,12 @@ public class WorkerUnavailable extends BaseEntity {
     @JoinColumn(name = "time_detail_id")
     private TimeDetail timeDetail;
 
+    @Column(name = "work_place_id", nullable = false)
+    private Long workPlaceId;
+
+    @Column(name = "week_schedule_id", nullable = false)
+    private Long weekScheduleId;
+
     @Column(name = "member_id", nullable = false)
     private Long memberId;
 
@@ -42,11 +48,15 @@ public class WorkerUnavailable extends BaseEntity {
      */
     public static WorkerUnavailable create(
             TimeDetail timeDetail,
-            Long memberId
+            Long memberId,
+            Long workPlaceId,
+            Long weekScheduleId
     ) {
         WorkerUnavailable workerUnavailable = new WorkerUnavailable();
         workerUnavailable.timeDetail = timeDetail;
         workerUnavailable.memberId = memberId;
+        workerUnavailable.workPlaceId = workPlaceId;
+        workerUnavailable.weekScheduleId = weekScheduleId;
         workerUnavailable.status = WorkerUnavailableStatus.ACTIVE;
         return workerUnavailable;
     }

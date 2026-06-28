@@ -76,7 +76,9 @@ public class WorkerSelectService {
         if (timeDetailIds.isEmpty()) {
             WorkerUnavailable workerUnavailable = WorkerUnavailable.create(
                     null,
-                    member.getId()
+                    member.getId(),
+                    workPlaceId,
+                    request.weekScheduleId()
             );
 
             workerUnavailableRepository.save(workerUnavailable);
@@ -112,7 +114,7 @@ public class WorkerSelectService {
 
         List<WorkerUnavailable> toSave = timeDetails.stream()
                 .filter(td -> !alreadySubmittedIds.contains(td.getId()))
-                .map(td -> WorkerUnavailable.create(td, member.getId()))
+                .map(td -> WorkerUnavailable.create(td, member.getId(), workPlaceId, request.weekScheduleId()))
                 .toList();
 
         workerUnavailableRepository.saveAll(toSave);
@@ -183,10 +185,10 @@ public class WorkerSelectService {
      */
     private void validateAlreadySubmitted(Long memberId, Long workPlaceId, Long weekScheduleId) {
         boolean exists = workerUnavailableRepository
-                .existsByMemberIdAndTimeDetail_Day_WeekSchedule_IdAndTimeDetail_Day_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
+                .existsByMemberIdAndWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
                         memberId,
-                        weekScheduleId,
                         workPlaceId,
+                        weekScheduleId,
                         WorkerUnavailableStatus.ACTIVE
                 );
 

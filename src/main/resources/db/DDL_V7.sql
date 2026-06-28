@@ -547,11 +547,13 @@ CREATE INDEX `idx_time_detail_day_status_deleted_work_part`
 CREATE TABLE `worker_unavailable`
 (
     `worker_unavailable_id` BIGINT      NOT NULL AUTO_INCREMENT,
-    `time_detail_id`        BIGINT NULL,
+    `time_detail_id`        BIGINT      NULL,
+    `work_place_id`         BIGINT      NOT NULL,
+    `week_schedule_id`      BIGINT      NOT NULL,
     `member_id`             BIGINT      NOT NULL,
     `status`                VARCHAR(20) NOT NULL,
-    `created_at`            DATETIME    NOT NULL,
-    `updated_at`            DATETIME    NOT NULL,
+    `created_at`            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `deleted_at`            DATETIME NULL,
 
     PRIMARY KEY (`worker_unavailable_id`),

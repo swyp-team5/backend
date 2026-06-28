@@ -85,6 +85,7 @@ class WorkerSelectApiIntegrationTest {
     private Member owner;
     private Member worker;
     private WorkPlace workPlace;
+    private WeekSchedule weekSchedule;
     private TimeDetail timeDetail;
 
     @BeforeEach
@@ -121,7 +122,7 @@ class WorkerSelectApiIntegrationTest {
         crewRepository.save(Crew.createWorker(worker, workPlace));
 
         // 타임 상세 정보 시드 (week_schedule → day → time_detail 순서로 생성)
-        WeekSchedule weekSchedule = weekScheduleRepository.save(WeekSchedule.create(
+        weekSchedule = weekScheduleRepository.save(WeekSchedule.create(
                 workPlace,
                 "2025년 7월 1주차",
                 LocalDate.now().plusDays(3),
@@ -369,7 +370,7 @@ class WorkerSelectApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                { "timeDetails": null }
+                                { "weekScheduleId": 1, "timeDetails": null }
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -528,8 +529,8 @@ class WorkerSelectApiIntegrationTest {
                 .map(s -> "[" + s + "]")
                 .orElse("[]");
         return """
-                { "timeDetails": %s }
-                """.formatted(idsJson);
+                { "weekScheduleId": %d, "timeDetails": %s }
+                """.formatted(weekSchedule.getId(), idsJson);
     }
 
     /**

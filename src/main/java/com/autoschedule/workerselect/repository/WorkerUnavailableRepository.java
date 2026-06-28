@@ -15,29 +15,12 @@ import java.util.List;
 public interface WorkerUnavailableRepository extends JpaRepository<WorkerUnavailable, Long> {
 
     /**
-     * 회원이 특정 타임을 이미 불가능 근무 타임으로 제출했는지 확인한다.
-     */
-    boolean existsByMemberIdAndTimeDetail_IdAndStatusAndDeletedAtIsNull(
-            Long memberId,
-            Long timeDetailId,
-            WorkerUnavailableStatus status
-    );
-
-    /**
-     * 회원이 근무 불가 정보를 이미 제출했는지 확인한다.
-     */
-    boolean existsByMemberIdAndStatusAndDeletedAtIsNull(
-            Long memberId,
-            WorkerUnavailableStatus status
-    );
-
-    /**
      * 회원이 특정 사업장의 주간 스케줄에 이미 근무 불가 정보를 제출했는지 확인한다.
      */
-    boolean existsByMemberIdAndTimeDetail_Day_WeekSchedule_IdAndTimeDetail_Day_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
+    boolean existsByMemberIdAndWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
             Long memberId,
-            Long weekScheduleId,
             Long workPlaceId,
+            Long weekScheduleId,
             WorkerUnavailableStatus status
     );
 
