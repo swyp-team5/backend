@@ -13,6 +13,9 @@ import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notice.domain.Notice;
 import com.autoschedule.notice.domain.NoticeComment;
 import com.autoschedule.notice.domain.NoticeCommentStatus;
+import com.autoschedule.notice.domain.NoticeReaction;
+import com.autoschedule.notice.domain.NoticeReactionStatus;
+import com.autoschedule.notice.domain.NoticeReactionType;
 import com.autoschedule.notice.domain.NoticeStatus;
 import com.autoschedule.notice.dto.HomeNoticeSummaryResponse;
 import com.autoschedule.notice.dto.HomeRepresentativeNoticeResponse;
@@ -21,9 +24,14 @@ import com.autoschedule.notice.dto.NoticeCommentRequest;
 import com.autoschedule.notice.dto.NoticeCommentResponse;
 import com.autoschedule.notice.dto.NoticeCreateRequest;
 import com.autoschedule.notice.dto.NoticePageResponse;
+import com.autoschedule.notice.dto.NoticeReactionCountResponse;
+import com.autoschedule.notice.dto.NoticeReactionRequest;
+import com.autoschedule.notice.dto.NoticeReactionSummaryResponse;
 import com.autoschedule.notice.dto.NoticeResponse;
 import com.autoschedule.notice.dto.NoticeUpdateRequest;
 import com.autoschedule.notice.dto.RepresentativeNoticeResponse;
+import com.autoschedule.notice.repository.NoticeReactionCountProjection;
+import com.autoschedule.notice.repository.NoticeReactionRepository;
 import com.autoschedule.notice.repository.NoticeCommentRepository;
 import com.autoschedule.notice.repository.NoticeRepository;
 import com.autoschedule.notification.domain.NotificationType;
@@ -33,6 +41,8 @@ import com.autoschedule.notification.service.NotificationCommandService;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -58,6 +68,7 @@ public class NoticeService {
     private final CrewRepository crewRepository;
     private final NoticeRepository noticeRepository;
     private final NoticeCommentRepository noticeCommentRepository;
+    private final NoticeReactionRepository noticeReactionRepository;
     private final NotificationCommandService notificationCommandService;
 
     /**
@@ -129,7 +140,11 @@ public class NoticeService {
                 pageable
         );
         Map<Long, String> writerNames = resolveWriterNames(notices.getContent());
-        return NoticePageResponse.from(notices, writerNames);
+        Map<Long, NoticeReactionSummaryResponse> reactionSummaries = resolveReactionSummaries(
+                notices.getContent(),
+                principal.memberId()
+        );
+        return NoticePageResponse.from(notices, writerNames, reactionSummaries);
     }
 
     /**
@@ -146,7 +161,7 @@ public class NoticeService {
                         workPlaceId,
                         NoticeStatus.ACTIVE
                 )
-                .map(value -> NoticeResponse.from(value, resolveWriterName(value.getWriterMemberId())))
+                .map(value -> toNoticeResponse(value, principal.memberId()))
                 .orElse(null);
         return new RepresentativeNoticeResponse(notice);
     }
@@ -196,7 +211,7 @@ public class NoticeService {
     public NoticeResponse getNotice(JwtAuthenticationPrincipal principal, Long noticeId) {
         Notice notice = findActiveNotice(noticeId);
         validateCanReadWorkPlace(principal, notice.getWorkPlace().getId());
-        return NoticeResponse.from(notice, resolveWriterName(notice.getWriterMemberId()));
+        return toNoticeResponse(notice, principal.memberId());
     }
 
     /**
@@ -310,6 +325,43 @@ public class NoticeService {
     }
 
     /**
+     * 근무자가 공지에 공감을 남기거나, 같은 공감을 다시 눌러 취소한다.
+     */
+    @Transactional
+    public NoticeReactionSummaryResponse reactNotice(
+            JwtAuthenticationPrincipal principal,
+            Long noticeId,
+            NoticeReactionRequest request
+    ) {
+        Notice notice = findActiveNotice(noticeId);
+        validateWorkerCanReact(principal, notice.getWorkPlace().getId());
+
+        NoticeReaction reaction = noticeReactionRepository.findByNotice_IdAndMemberId(noticeId, principal.memberId())
+                .orElse(null);
+        if (reaction == null) {
+            noticeReactionRepository.save(NoticeReaction.create(notice, principal.memberId(), request.reactionType()));
+        } else if (reaction.isSameActiveReaction(request.reactionType())) {
+            reaction.markDeleted(LocalDateTime.now());
+        } else {
+            reaction.activate(request.reactionType());
+        }
+        return resolveReactionSummary(notice, principal.memberId());
+    }
+
+    /**
+     * 근무자가 공지에 남긴 공감을 취소한다.
+     */
+    @Transactional
+    public NoticeReactionSummaryResponse deleteReaction(JwtAuthenticationPrincipal principal, Long noticeId) {
+        Notice notice = findActiveNotice(noticeId);
+        validateWorkerCanReact(principal, notice.getWorkPlace().getId());
+        noticeReactionRepository.findByNotice_IdAndMemberId(noticeId, principal.memberId())
+                .filter(reaction -> reaction.getStatus() == NoticeReactionStatus.ACTIVE)
+                .ifPresent(reaction -> reaction.markDeleted(LocalDateTime.now()));
+        return resolveReactionSummary(notice, principal.memberId());
+    }
+
+    /**
      * 대표 공지로 지정된 경우 같은 사업장의 기존 대표 공지를 해제한다.
      */
     private void applyRepresentativePolicy(Notice notice) {
@@ -380,14 +432,108 @@ public class NoticeService {
     }
 
     /**
-     * 근무자가 승인된 활성 크루인지 확인한다.
+     * 공감 가능한 승인 근무자인지 확인한다.
      */
+    private void validateWorkerCanReact(JwtAuthenticationPrincipal principal, Long workPlaceId) {
+        if (principal.role() == MemberRole.WORKER && hasApprovedCrewMembership(principal.memberId(), workPlaceId)) {
+            return;
+        }
+        throw new ApiException(ErrorCode.FORBIDDEN, "공지에 공감할 권한이 없습니다.");
+    }
+
     private boolean hasApprovedCrewMembership(Long memberId, Long workPlaceId) {
         return crewRepository.existsByMember_IdAndWorkPlace_IdAndJoinStatusAndStatus(
                 memberId,
                 workPlaceId,
                 CrewJoinStatus.APPROVED,
                 CrewStatus.ACTIVE
+        );
+    }
+
+    /**
+     * 공지 1건의 공감 요약을 조회한다.
+     */
+    private NoticeReactionSummaryResponse resolveReactionSummary(Notice notice, Long viewerMemberId) {
+        return resolveReactionSummaries(List.of(notice), viewerMemberId).get(notice.getId());
+    }
+
+    /**
+     * 공지 목록의 공감 집계와 현재 회원의 공감을 한 번에 조회한다.
+     */
+    private Map<Long, NoticeReactionSummaryResponse> resolveReactionSummaries(
+            List<Notice> notices,
+            Long viewerMemberId
+    ) {
+        if (notices.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> noticeIds = notices.stream()
+                .map(Notice::getId)
+                .toList();
+        Map<Long, Map<NoticeReactionType, Long>> countsByNoticeId = resolveReactionCounts(noticeIds);
+        Map<Long, NoticeReactionType> myReactionByNoticeId = resolveMyReactions(noticeIds, viewerMemberId);
+        Map<Long, NoticeReactionSummaryResponse> summaries = new HashMap<>();
+        for (Notice notice : notices) {
+            Map<NoticeReactionType, Long> counts = countsByNoticeId.getOrDefault(notice.getId(), Map.of());
+            List<NoticeReactionCountResponse> reactions = java.util.Arrays.stream(NoticeReactionType.values())
+                    .map(type -> new NoticeReactionCountResponse(type, counts.getOrDefault(type, 0L)))
+                    .toList();
+            summaries.put(
+                    notice.getId(),
+                    new NoticeReactionSummaryResponse(
+                            notice.getId(),
+                            myReactionByNoticeId.get(notice.getId()),
+                            reactions
+                    )
+            );
+        }
+        return summaries;
+    }
+
+    /**
+     * 공지 ID별 공감 수를 타입별로 집계한다.
+     */
+    private Map<Long, Map<NoticeReactionType, Long>> resolveReactionCounts(List<Long> noticeIds) {
+        List<NoticeReactionCountProjection> counts = noticeReactionRepository.countByNoticeIdsAndStatus(
+                noticeIds,
+                NoticeReactionStatus.ACTIVE
+        );
+        Map<Long, Map<NoticeReactionType, Long>> countsByNoticeId = new HashMap<>();
+        for (NoticeReactionCountProjection count : counts) {
+            countsByNoticeId
+                    .computeIfAbsent(count.getNoticeId(), ignored -> new EnumMap<>(NoticeReactionType.class))
+                    .put(count.getReactionType(), count.getCount());
+        }
+        return countsByNoticeId;
+    }
+
+    /**
+     * 현재 회원이 공지별로 선택한 활성 공감을 조회한다.
+     */
+    private Map<Long, NoticeReactionType> resolveMyReactions(List<Long> noticeIds, Long viewerMemberId) {
+        if (viewerMemberId == null) {
+            return Map.of();
+        }
+        return noticeReactionRepository
+                .findByNotice_IdInAndMemberIdAndStatus(noticeIds, viewerMemberId, NoticeReactionStatus.ACTIVE)
+                .stream()
+                .collect(Collectors.toMap(
+                        reaction -> reaction.getNotice().getId(),
+                        NoticeReaction::getReactionType
+                ));
+    }
+
+    /**
+     * 공지 응답에 공감 요약을 포함해 변환한다.
+     */
+    private NoticeResponse toNoticeResponse(Notice notice, Long viewerMemberId) {
+        NoticeReactionSummaryResponse summary = resolveReactionSummary(notice, viewerMemberId);
+        return NoticeResponse.from(
+                notice,
+                resolveWriterName(notice.getWriterMemberId()),
+                summary.myReactionType(),
+                summary.reactions()
         );
     }
 

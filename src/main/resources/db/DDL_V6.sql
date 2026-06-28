@@ -20,6 +20,32 @@ CREATE TABLE member (
  DEFAULT CHARSET = utf8mb4
  COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE member_notification_setting (
+    member_notification_setting_id BIGINT NOT NULL AUTO_INCREMENT,
+    member_id BIGINT NOT NULL,
+    fcm_push_enabled BIT(1) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (member_notification_setting_id),
+
+    CONSTRAINT fk_member_notification_setting_member
+        FOREIGN KEY (member_id)
+            REFERENCES member (member_id),
+
+    CONSTRAINT uk_member_notification_setting_member
+        UNIQUE (member_id),
+
+    CONSTRAINT chk_member_notification_setting_fcm_push_enabled
+        CHECK (fcm_push_enabled IN (0, 1))
+
+)ENGINE=InnoDB
+ DEFAULT CHARSET = utf8mb4
+ COLLATE = utf8mb4_unicode_ci;
+
+CREATE INDEX idx_member_notification_setting_member_id
+    ON member_notification_setting (member_id);
+
 CREATE TABLE work_place (
     work_place_id BIGINT NOT NULL AUTO_INCREMENT,
     owner_member_id BIGINT NOT NULL,
@@ -121,6 +147,9 @@ CREATE TABLE crew (
 )ENGINE=InnoDB
  DEFAULT CHARSET = utf8mb4
  COLLATE = utf8mb4_unicode_ci;
+
+CREATE INDEX idx_crew_member_join_status_status_deleted_work_place
+    ON crew (member_id, join_status, status, deleted_at, work_place_id);
 
 CREATE TABLE crew_invitation (
     crew_invitation_id BIGINT NOT NULL AUTO_INCREMENT,
@@ -249,6 +278,36 @@ CREATE INDEX idx_notice_work_place_status_deleted_created_id
 
 CREATE INDEX idx_notice_work_place_representative_status_deleted
     ON notice (work_place_id, representative, status, deleted_at);
+
+
+CREATE TABLE notice_reaction (
+    notice_reaction_id BIGINT NOT NULL AUTO_INCREMENT,
+    notice_id BIGINT NOT NULL,
+    member_id BIGINT NOT NULL,
+    reaction_type VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+
+    PRIMARY KEY (notice_reaction_id),
+
+    CONSTRAINT fk_notice_reaction_notice
+        FOREIGN KEY (notice_id)
+            REFERENCES notice (notice_id),
+
+    CONSTRAINT uk_notice_reaction_notice_member
+        UNIQUE (notice_id, member_id)
+
+)ENGINE=InnoDB
+ DEFAULT CHARSET = utf8mb4
+ COLLATE = utf8mb4_unicode_ci;
+
+CREATE INDEX idx_notice_reaction_notice_status_type
+    ON notice_reaction (notice_id, status, reaction_type);
+
+CREATE INDEX idx_notice_reaction_member_status
+    ON notice_reaction (member_id, status);
 
 
 CREATE TABLE notice_comment (

@@ -15,6 +15,7 @@ public final class TestDatabaseCleaner {
             "notification",
             "fcm_token",
             "notice_comment",
+            "notice_reaction",
             "notice",
             "member_terms_agreement",
             "terms",
@@ -22,6 +23,7 @@ public final class TestDatabaseCleaner {
             "crew",
             "profile_image",
             "work_place",
+            "member_notification_setting",
             "member"
     };
 

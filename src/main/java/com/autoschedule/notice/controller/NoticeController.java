@@ -2,12 +2,15 @@ package com.autoschedule.notice.controller;
 
 import com.autoschedule.auth.jwt.JwtAuthenticationPrincipal;
 import com.autoschedule.global.security.annotation.OwnerOnly;
+import com.autoschedule.global.security.annotation.WorkerOnly;
 import com.autoschedule.notice.dto.HomeRepresentativeNoticeResponse;
 import com.autoschedule.notice.dto.NoticeCommentCursorResponse;
 import com.autoschedule.notice.dto.NoticeCommentRequest;
 import com.autoschedule.notice.dto.NoticeCommentResponse;
 import com.autoschedule.notice.dto.NoticeCreateRequest;
 import com.autoschedule.notice.dto.NoticePageResponse;
+import com.autoschedule.notice.dto.NoticeReactionRequest;
+import com.autoschedule.notice.dto.NoticeReactionSummaryResponse;
 import com.autoschedule.notice.dto.NoticeResponse;
 import com.autoschedule.notice.dto.NoticeUpdateRequest;
 import com.autoschedule.notice.dto.RepresentativeNoticeResponse;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -136,6 +140,31 @@ public class NoticeController {
             @PathVariable Long noticeId
     ) {
         noticeService.deleteNotice(principal.memberId(), noticeId);
+    }
+
+    /**
+     * 근무자가 공지에 공감을 남기거나 같은 공감을 다시 눌러 취소한다.
+     */
+    @WorkerOnly
+    @PutMapping("/api/notices/{noticeId}/reactions")
+    public NoticeReactionSummaryResponse reactNotice(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long noticeId,
+            @Valid @RequestBody NoticeReactionRequest request
+    ) {
+        return noticeService.reactNotice(principal, noticeId, request);
+    }
+
+    /**
+     * 근무자가 공지에 남긴 공감을 취소한다.
+     */
+    @WorkerOnly
+    @DeleteMapping("/api/notices/{noticeId}/reactions")
+    public NoticeReactionSummaryResponse deleteReaction(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long noticeId
+    ) {
+        return noticeService.deleteReaction(principal, noticeId);
     }
 
     /**

@@ -21,6 +21,7 @@
 - 프로필 이미지 업로드 확정
 - 프로필 이미지 수정/교체
 - 프로필 이미지 삭제
+- 내 사업장 목록 조회
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
@@ -36,8 +37,10 @@
 - 사업장 공지사항 댓글 조회
 - 사업장 공지사항 댓글 수정
 - 사업장 공지사항 댓글 삭제
+- 사업장 공지사항 공감 선택/변경/취소
 - FCM 토큰 등록 또는 갱신
 - FCM 토큰 비활성화
+- FCM 푸시 수신 설정 조회/변경
 - 알림함 조회
 - 알림 단건 읽음 처리
 - 모든 알림 읽음 처리
@@ -775,6 +778,98 @@ Authorization: Bearer {ACCESS_TOKEN}
 | 401 | 4002 | access token 누락, 만료, 서명 오류 |
 | 409 | 4005 | 탈퇴 취소 가능 기간 경과, 이미 영구 탈퇴 완료된 회원 |
 
+## 6.8 사업장 API
+
+### 6.8.1 홈 화면 매장 드롭다운 목록 조회
+
+홈 화면 상단의 매장 선택 드롭다운에서 사용할 현재 로그인 회원의 사업장 목록을 조회한다.
+사장님과 근무자는 여러 매장에 속할 수 있으므로, 앱은 이 API로 선택 가능한 매장 목록을 먼저 조회한 뒤 선택된 `workPlaceId` 기준으로 공지, 스케줄, 출퇴근 등 홈 데이터를 조회한다.
+
+```http
+GET /api/work-places/me
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+OWNER, WORKER
+```
+
+#### 성공 응답
+
+```json
+{
+  "workPlaces": [
+    {
+      "workPlaceId": 1,
+      "name": "매장명1",
+      "size": "FIVE_TO_NINE",
+      "roadAddress": "서울시 강남구 ...",
+      "detailAddress": "3층",
+      "ownerMemberId": 1,
+      "crewId": 10,
+      "crewRole": "OWNER",
+      "joinStatus": "APPROVED",
+      "crewStatus": "ACTIVE",
+      "workPlaceStatus": "ACTIVE"
+    }
+  ]
+}
+```
+
+#### 홈 화면 사용 흐름
+
+1. 앱 진입 후 access token으로 `GET /api/work-places/me`를 호출한다.
+2. `workPlaces` 배열을 홈 화면 매장 드롭다운 옵션으로 렌더링한다.
+3. 사용자가 매장을 선택하면 해당 항목의 `workPlaceId`를 현재 선택 매장 ID로 저장한다.
+4. 선택된 `workPlaceId`로 매장별 홈 데이터를 조회한다.
+
+```http
+GET /api/home/work-places/{workPlaceId}/representative-notice
+GET /api/home/work-places/{workPlaceId}/latest-notice
+GET /api/work-places/{workPlaceId}/notices?page=0&size=20
+```
+
+5. 사용자가 드롭다운에서 다른 매장을 선택하면 새 `workPlaceId`로 홈 데이터를 다시 조회한다.
+
+#### 응답 필드
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaces | array | 현재 회원이 홈 화면 드롭다운에서 선택할 수 있는 사업장 목록 |
+| workPlaces[].workPlaceId | number | 사업장 ID. 드롭다운 선택 후 매장별 API 호출에 사용하는 기준값 |
+| workPlaces[].name | string | 사업장 이름. 드롭다운에 노출할 매장명 |
+| workPlaces[].size | string | 매장 규모 |
+| workPlaces[].roadAddress | string | 도로명 주소 |
+| workPlaces[].detailAddress | string/null | 상세 주소 |
+| workPlaces[].ownerMemberId | number | 사업장을 생성한 사장님 회원 ID |
+| workPlaces[].crewId | number | 현재 회원의 해당 사업장 crew ID |
+| workPlaces[].crewRole | string | 현재 회원의 해당 사업장 역할. `OWNER`, `WORKER` |
+| workPlaces[].joinStatus | string | 현재 회원의 해당 사업장 가입 상태. 현재 응답에는 `APPROVED`만 포함 |
+| workPlaces[].crewStatus | string | 현재 회원의 해당 사업장 소속 상태. 현재 응답에는 `ACTIVE`만 포함 |
+| workPlaces[].workPlaceStatus | string | 사업장 상태. 현재 응답에는 `ACTIVE`만 포함 |
+
+#### 주요 비즈니스 규칙
+
+- OWNER, WORKER 모두 같은 API를 사용한다.
+- 이 API는 홈 화면의 매장 드롭다운 옵션을 구성하기 위한 API다.
+- 회원이 `crew`에서 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장만 반환한다.
+- `work_place.status = ACTIVE`, `work_place.deleted_at is null`인 사업장만 반환한다.
+- 사장님도 `crew_role = OWNER` 소속 기준으로 조회한다.
+- 근무자는 여러 사업장에 소속될 수 있으며, 승인된 활성 소속만 반환한다.
+- 소속된 활성 사업장이 없으면 빈 배열을 반환한다.
+- 정렬 기준은 `workPlaceId ASC`다.
+- 서버는 기본 선택 매장을 별도로 판단하지 않는다. 클라이언트는 보통 `workPlaces[0]`을 초기 선택값으로 사용하거나, 로컬에 마지막 선택 매장이 있으면 그 값을 우선 사용할 수 있다.
+- 공지사항은 매장별 데이터이므로 선택된 `workPlaceId`가 바뀌면 공지 관련 API도 다시 호출해야 한다.
+- 서버는 `crew`와 `work_place`를 fetch join으로 한 번에 조회하여 매장 목록 조회에서 N+1 쿼리를 발생시키지 않는다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+
 ## 7. 크루 초대 API
 
 ### 7.1 사업장 크루 초대 코드 생성
@@ -1088,6 +1183,8 @@ OWNER
   "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
   "representative": true,
   "status": "ACTIVE",
+  "myReactionType": null,
+  "reactions": [],
   "createdAt": "2026-06-14T03:00:00",
   "updatedAt": "2026-06-14T03:00:00"
 }
@@ -1134,6 +1231,33 @@ OWNER, WORKER
       "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
       "representative": true,
       "status": "ACTIVE",
+      "myReactionType": "HEART",
+      "reactions": [
+        {
+          "reactionType": "HEART",
+          "count": 4
+        },
+        {
+          "reactionType": "CHECK",
+          "count": 6
+        },
+        {
+          "reactionType": "NEUTRAL",
+          "count": 2
+        },
+        {
+          "reactionType": "SMILE",
+          "count": 0
+        },
+        {
+          "reactionType": "KISS",
+          "count": 0
+        },
+        {
+          "reactionType": "PROUD",
+          "count": 1
+        }
+      ],
       "createdAt": "2026-06-14T03:00:00",
       "updatedAt": "2026-06-14T03:00:00"
     }
@@ -1151,6 +1275,8 @@ OWNER, WORKER
 - 근무자는 승인된 활성 크루로 소속된 사업장의 공지만 조회할 수 있다.
 - 삭제된 공지는 목록에 포함하지 않는다.
 - 기본 정렬은 최신 작성순이다.
+- `myReactionType`은 로그인한 회원이 선택한 공감이다. 선택한 공감이 없으면 `null`이다.
+- `reactions`는 6개 공감 타입의 현재 활성 집계이며, 집계가 0인 타입도 포함한다.
 
 ### 8.3 사업장 대표 공지 조회
 
@@ -1172,6 +1298,33 @@ Authorization: Bearer {accessToken}
     "content": "홈에서 노출할 대표 공지입니다.",
     "representative": true,
     "status": "ACTIVE",
+    "myReactionType": null,
+    "reactions": [
+      {
+        "reactionType": "HEART",
+        "count": 0
+      },
+      {
+        "reactionType": "CHECK",
+        "count": 0
+      },
+      {
+        "reactionType": "NEUTRAL",
+        "count": 0
+      },
+      {
+        "reactionType": "SMILE",
+        "count": 0
+      },
+      {
+        "reactionType": "KISS",
+        "count": 0
+      },
+      {
+        "reactionType": "PROUD",
+        "count": 0
+      }
+    ],
     "createdAt": "2026-06-14T03:00:00",
     "updatedAt": "2026-06-14T03:00:00"
   }
@@ -1201,7 +1354,154 @@ Authorization: Bearer {accessToken}
 
 응답 형식은 `8.1 사업장 공지 작성` 성공 응답과 동일하다.
 
-### 8.5 홈 대표 공지 조회
+### 8.5 공지 공감 선택/변경/취소
+
+근무자가 공지에 공감을 남긴다. 이미 같은 공감을 선택한 상태에서 다시 같은 공감을 요청하면 공감을 취소한다.
+
+```http
+PUT /api/notices/{noticeId}/reactions
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+WORKER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| noticeId | number | Y | 공감을 선택할 공지 ID |
+
+#### 요청 본문
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| reactionType | string | Y | 공감 종류. `HEART`, `CHECK`, `NEUTRAL`, `SMILE`, `KISS`, `PROUD` |
+
+#### 요청 예시
+
+```json
+{
+  "reactionType": "HEART"
+}
+```
+
+#### 성공 응답
+
+```json
+{
+  "noticeId": 1,
+  "myReactionType": "HEART",
+  "reactions": [
+    {
+      "reactionType": "HEART",
+      "count": 4
+    },
+    {
+      "reactionType": "CHECK",
+      "count": 6
+    },
+    {
+      "reactionType": "NEUTRAL",
+      "count": 2
+    },
+    {
+      "reactionType": "SMILE",
+      "count": 0
+    },
+    {
+      "reactionType": "KISS",
+      "count": 0
+    },
+    {
+      "reactionType": "PROUD",
+      "count": 1
+    }
+  ]
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 근무자만 공감을 선택할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 공지에만 공감을 선택할 수 있다.
+- 공감은 회원 1명이 공지 1개에 대해 최대 1개 타입만 선택할 수 있다.
+- 여러 공감 타입을 동시에 선택할 수 없다. 서버는 `notice_id + member_id` 기준으로 활성 공감 0개 또는 1개만 유지한다.
+- 기존 공감이 없는 상태에서 요청하면 새 공감을 생성한다.
+- 기존 공감과 다른 공감을 요청하면 실패하지 않고 기존 row를 재사용하여 공감 종류를 변경한다.
+- 기존 공감과 같은 공감을 요청하면 취소 처리되어 `myReactionType`은 `null`이 된다.
+- 공감 회원 ID는 access token의 `memberId`를 사용하며 `member` 테이블과 FK를 걸지 않는 비정규화 컬럼으로 저장한다.
+
+#### 공감 변경 예시
+
+```text
+공감 없음 + HEART 요청 -> HEART 활성
+HEART 활성 + CHECK 요청 -> CHECK로 변경
+CHECK 활성 + CHECK 요청 -> 공감 취소
+공감 취소 상태 + PROUD 요청 -> PROUD 활성
+```
+
+### 8.6 공지 공감 취소
+
+근무자가 현재 선택한 공감을 취소한다. 이미 선택한 공감이 없어도 성공 응답을 반환한다.
+
+```http
+DELETE /api/notices/{noticeId}/reactions
+Authorization: Bearer {accessToken}
+```
+
+#### 인증
+
+```text
+WORKER
+```
+
+#### 성공 응답
+
+```json
+{
+  "noticeId": 1,
+  "myReactionType": null,
+  "reactions": [
+    {
+      "reactionType": "HEART",
+      "count": 3
+    },
+    {
+      "reactionType": "CHECK",
+      "count": 6
+    },
+    {
+      "reactionType": "NEUTRAL",
+      "count": 2
+    },
+    {
+      "reactionType": "SMILE",
+      "count": 0
+    },
+    {
+      "reactionType": "KISS",
+      "count": 0
+    },
+    {
+      "reactionType": "PROUD",
+      "count": 1
+    }
+  ]
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 근무자만 공감을 취소할 수 있다.
+- 근무자는 승인된 활성 크루로 소속된 사업장의 공지에 대해서만 공감을 취소할 수 있다.
+- 현재 활성 공감이 없으면 상태 변경 없이 현재 공감 집계만 반환한다.
+
+### 8.7 홈 대표 공지 조회
 
 홈 화면에서 대표 공지만 가볍게 노출하기 위한 전용 API다. 기존 대표 공지 조회 API보다 응답 필드가 작다.
 
@@ -1251,7 +1551,7 @@ OWNER, WORKER
 - 대표 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
 
-### 8.6 홈 최신 공지 조회
+### 8.8 홈 최신 공지 조회
 
 홈 화면에서 가장 최근 작성된 공지 1건을 가볍게 노출하기 위한 전용 API다. 대표 공지 여부와 무관하게 활성 공지 중 최신 1건을 반환한다.
 
@@ -1303,7 +1603,7 @@ OWNER, WORKER
 - 최신 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
 
-### 8.7 공지 수정
+### 8.9 공지 수정
 
 ```http
 PATCH /api/notices/{noticeId}
@@ -1325,7 +1625,7 @@ OWNER
 - 사장님 본인이 소유한 사업장의 공지만 수정할 수 있다.
 - 수정으로 대표 공지를 지정하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
 
-### 8.8 공지 삭제
+### 8.10 공지 삭제
 
 ```http
 DELETE /api/notices/{noticeId}
@@ -1351,7 +1651,7 @@ OWNER
 - 삭제는 물리 삭제가 아니라 `DELETED` 상태와 `deleted_at`으로 처리한다.
 - 대표 공지를 삭제하면 해당 사업장은 대표 공지가 없는 상태가 된다.
 
-### 8.9 공지 댓글 작성
+### 8.11 공지 댓글 작성
 
 ```http
 POST /api/notices/{noticeId}/comments
@@ -1398,7 +1698,7 @@ OWNER
 }
 ```
 
-### 8.10 공지 댓글 조회
+### 8.12 공지 댓글 조회
 
 ```http
 GET /api/notices/{noticeId}/comments?cursorId=10&size=20
@@ -1439,7 +1739,7 @@ Authorization: Bearer {accessToken}
 - 다음 페이지가 없으면 `nextCursorId`는 null이고 `hasNext`는 false다.
 - 삭제된 댓글은 조회하지 않는다.
 
-### 8.11 공지 댓글 수정
+### 8.13 공지 댓글 수정
 
 ```http
 PATCH /api/notices/{noticeId}/comments/{commentId}
@@ -1453,9 +1753,9 @@ Content-Type: application/json
 OWNER
 ```
 
-요청 본문과 응답 형식은 `8.9 공지 댓글 작성`과 동일하다.
+요청 본문과 응답 형식은 `8.11 공지 댓글 작성`과 동일하다.
 
-### 8.12 공지 댓글 삭제
+### 8.14 공지 댓글 삭제
 
 ```http
 DELETE /api/notices/{noticeId}/comments/{commentId}
@@ -1480,7 +1780,7 @@ OWNER
 | ---: | --- | --- |
 | 400 | 4000 | 요청 본문, 페이지, 커서 검증 실패 |
 | 401 | 4002 | access token 없음 또는 유효하지 않음 |
-| 403 | 4003 | OWNER 권한이 아니거나 사업장 공지 접근 권한 없음 |
+| 403 | 4003 | OWNER/WORKER 권한이 아니거나 사업장 공지 접근 권한 없음 |
 | 404 | 4004 | 사업장, 공지, 댓글을 찾을 수 없음 |
 
 ## 9. 알림 API
@@ -1553,6 +1853,62 @@ Authorization: Bearer {accessToken}
 - 로그인한 회원 본인의 `deviceId`에 해당하는 토큰만 비활성화한다.
 - 토큰이 없어도 idempotent하게 `204 No Content`를 반환한다.
 - 다른 회원의 같은 `deviceId` 토큰에는 영향을 주지 않는다.
+
+### 9.2.1 FCM 푸시 수신 설정 조회/변경
+
+앱 내부 기본 알림은 실제 기기 푸시가 아니라 알림함 조회 데이터이므로 항상 저장한다.
+FCM 푸시는 실제 기기 알림을 발생시키므로 회원이 수신 여부를 직접 변경할 수 있다.
+
+#### 조회
+
+```http
+GET /api/members/me/notification-settings
+Authorization: Bearer {accessToken}
+```
+
+##### 성공 응답
+
+```json
+{
+  "fcmPushEnabled": true
+}
+```
+
+#### 변경
+
+```http
+PATCH /api/members/me/notification-settings
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+##### 요청 Body
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| fcmPushEnabled | boolean | Y | FCM 푸시 수신 여부 |
+
+```json
+{
+  "fcmPushEnabled": false
+}
+```
+
+##### 성공 응답
+
+```json
+{
+  "fcmPushEnabled": false
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- JWT 인증이 필요하다.
+- OWNER, WORKER 모두 호출할 수 있다.
+- 설정 row가 없으면 조회 시 기본값 `true`로 생성한다.
+- `fcmPushEnabled=false`이면 `PushPolicy.PUSH` 알림도 앱 내부 알림만 저장하고 FCM delivery를 생성하지 않는다.
+- `fcmPushEnabled=true`이고 활성 FCM 토큰이 있는 경우에만 FCM delivery 생성과 발송 이벤트 발행이 가능하다.
 
 ### 9.3 알림함 조회
 
@@ -1692,14 +2048,14 @@ Content-Type: application/json
 - 다른 회원 ID를 요청으로 받지 않는다.
 - `notification_type`은 `FCM_TEST`, `push_policy`는 `PUSH`로 저장한다.
 - 기존 알림 발송 파이프라인과 동일하게 `notification`, `notification_delivery`를 생성하고 커밋 이후 FCM 발송을 시도한다.
-- 활성 FCM 토큰이 없으면 앱 내 알림만 생성되고 FCM delivery는 생성되지 않는다.
+- 활성 FCM 토큰이 없거나 회원의 FCM 푸시 수신 설정이 꺼져 있으면 앱 내 알림만 생성되고 FCM delivery는 생성되지 않는다.
 
 ### 9.7 내부 알림 발송 정책
 
 도메인 기능은 공개 API가 아니라 내부 서비스 `NotificationCommandService.sendToMember(...)`를 호출해 알림을 생성한다.
 
 - `IN_APP_ONLY`: `notification`만 저장하고 FCM 발송을 시도하지 않는다.
-- `PUSH`: `notification` 저장 후 수신 회원의 활성 `fcm_token`마다 FCM 발송을 시도한다.
+- `PUSH`: `notification` 저장 후 수신 회원의 FCM 푸시 수신 설정이 켜져 있고 활성 `fcm_token`이 있으면 FCM 발송을 시도한다.
 - FCM 발송 시도 결과는 `notification_delivery`에 저장한다.
 - Firebase 설정이 비활성화된 환경에서는 FCM 발송을 시도하지 않고 실패 delivery를 기록한다.
 - Firebase가 등록되지 않은 토큰이라고 응답하면 해당 `fcm_token`을 `INACTIVE`로 변경한다.
@@ -1757,6 +2113,29 @@ idx_crew_invitation_work_place_status (work_place_id, status)
 idx_crew_invitation_invite_code_status (invite_code, status)
 idx_crew_invitation_expires_at_status (expires_at, status)
 ```
+
+### 10.2 crew 조회 인덱스
+
+`crew`는 회원이 여러 사업장에 소속되는 구조를 표현한다. 홈 화면의 내 사업장 목록 조회는 로그인 회원의 승인된 활성 소속을 기준으로 사업장을 조회한다.
+
+#### 주요 조회 조건
+
+```text
+member_id = ?
+join_status = 'APPROVED'
+status = 'ACTIVE'
+deleted_at is null
+```
+
+#### 인덱스
+
+```text
+idx_crew_member_join_status_status_deleted_work_place (member_id, join_status, status, deleted_at, work_place_id)
+```
+
+- `GET /api/work-places/me` 조회에서 사용한다.
+- `work_place`는 PK인 `work_place_id`로 조인한다.
+- 백엔드는 `crew`와 `work_place`를 fetch join으로 조회하여 매장 목록 응답 생성 시 N+1 쿼리를 방지한다.
 
 ## 11. 공지사항 DB 정책
 
@@ -1831,6 +2210,56 @@ DELETED
 idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, notice_comment_id)
 ```
 
+### 11.3 notice_reaction
+
+`notice_reaction`은 근무자가 공지에 선택한 공감을 저장한다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notice_reaction_id | BIGINT | N | PK |
+| notice_id | BIGINT | N | 공지 ID, `notice` FK |
+| member_id | BIGINT | N | 공감을 선택한 회원 ID 스냅샷, FK 없음 |
+| reaction_type | VARCHAR(20) | N | 공감 종류 |
+| status | VARCHAR(20) | N | 공감 상태 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 취소 시각 |
+
+#### 공감 종류
+
+```text
+HEART
+CHECK
+NEUTRAL
+SMILE
+KISS
+PROUD
+```
+
+#### 상태값
+
+```text
+ACTIVE
+DELETED
+```
+
+#### 제약조건
+
+- `notice_id`는 `notice.notice_id`를 참조한다.
+- `member_id`는 access token의 `memberId`를 저장하는 비정규화 컬럼이며 `member` FK를 걸지 않는다.
+- `unique(notice_id, member_id)`로 회원 1명이 공지 1개에 대해 하나의 공감 row만 갖도록 보장한다.
+- 따라서 한 회원이 같은 공지에 여러 공감 타입을 동시에 활성화할 수 없다.
+- 같은 공감을 다시 누르거나 취소 API를 호출하면 row를 물리 삭제하지 않고 `DELETED` 상태와 `deleted_at`으로 처리한다.
+- 취소 후 다시 공감하면 기존 row를 재사용하여 `ACTIVE` 상태로 복구한다.
+
+#### 인덱스
+
+```text
+uk_notice_reaction_notice_member (notice_id, member_id)
+idx_notice_reaction_notice_status_type (notice_id, status, reaction_type)
+idx_notice_reaction_member_status (member_id, status)
+```
+
 ## 12. 알림 DB 정책
 
 ### 12.1 fcm_token
@@ -1872,7 +2301,31 @@ idx_fcm_token_member_status (member_id, status)
 idx_fcm_token_token (token)
 ```
 
-### 12.2 notification
+### 12.2 member_notification_setting
+
+`member_notification_setting`은 회원별 FCM 푸시 수신 설정을 저장한다. 앱 내부 기본 알림은 이 설정과 무관하게 항상 `notification`에 저장된다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| member_notification_setting_id | BIGINT | N | PK |
+| member_id | BIGINT | N | 회원 ID, `member` FK |
+| fcm_push_enabled | BIT(1) | N | FCM 푸시 수신 여부 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+
+#### 제약조건
+
+- `member_id`는 `member.member_id`를 참조한다.
+- `member_id`는 UNIQUE로 회원당 설정 1건만 허용한다.
+- 설정 row가 없는 기존 회원은 애플리케이션에서 기본값 `true`로 취급한다.
+
+#### 인덱스
+
+```text
+idx_member_notification_setting_member_id (member_id)
+```
+
+### 12.3 notification
 
 `notification`은 회원별 앱 내 알림함 데이터를 저장한다. FCM 앱 푸시 대상 알림도 먼저 이 테이블에 저장된다.
 
@@ -1909,7 +2362,7 @@ idx_notification_receiver_status_created (receiver_member_id, status, created_at
 idx_notification_receiver_read (receiver_member_id, read_at)
 ```
 
-### 12.3 notification_delivery
+### 12.4 notification_delivery
 
 `notification_delivery`는 FCM 앱 푸시 발송 시도와 결과 이력을 저장한다.
 
@@ -1949,7 +2402,7 @@ idx_notification_delivery_status_attempted (status, attempted_at)
 idx_notification_delivery_fcm_token (fcm_token_id)
 ```
 
-### 12.4 FCM 운영 설정
+### 12.5 FCM 운영 설정
 
 Firebase Admin SDK는 Java 서버 SDK를 사용한다. 서버는 기본적으로 FCM 발송 비활성 상태로 기동한다.
 

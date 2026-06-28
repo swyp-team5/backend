@@ -1,8 +1,10 @@
 package com.autoschedule.notice.dto;
 
 import com.autoschedule.notice.domain.Notice;
+import com.autoschedule.notice.domain.NoticeReactionType;
 import com.autoschedule.notice.domain.NoticeStatus;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 공지 게시글 단건 응답을 표현한다.
@@ -16,6 +18,8 @@ public record NoticeResponse(
         String content,
         boolean representative,
         NoticeStatus status,
+        NoticeReactionType myReactionType,
+        List<NoticeReactionCountResponse> reactions,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -24,6 +28,18 @@ public record NoticeResponse(
      * 공지 엔티티와 작성자 이름을 모바일 응답으로 변환한다.
      */
     public static NoticeResponse from(Notice notice, String writerMemberName) {
+        return from(notice, writerMemberName, null, List.of());
+    }
+
+    /**
+     * 공지 엔티티와 작성자 이름, 공감 요약을 모바일 응답으로 변환한다.
+     */
+    public static NoticeResponse from(
+            Notice notice,
+            String writerMemberName,
+            NoticeReactionType myReactionType,
+            List<NoticeReactionCountResponse> reactions
+    ) {
         return new NoticeResponse(
                 notice.getId(),
                 notice.getWorkPlace().getId(),
@@ -33,6 +49,8 @@ public record NoticeResponse(
                 notice.getContent(),
                 notice.isRepresentative(),
                 notice.getStatus(),
+                myReactionType,
+                reactions,
                 notice.getCreatedAt(),
                 notice.getUpdatedAt()
         );

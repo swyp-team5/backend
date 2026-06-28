@@ -4,6 +4,7 @@ import com.autoschedule.crew.domain.Crew;
 import com.autoschedule.crew.domain.CrewJoinStatus;
 import com.autoschedule.crew.domain.CrewRole;
 import com.autoschedule.crew.domain.CrewStatus;
+import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -68,5 +69,27 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
             @Param("joinStatus") CrewJoinStatus joinStatus,
             @Param("crewRole") CrewRole crewRole,
             @Param("status") CrewStatus status
+    );
+
+    /**
+     * 회원이 홈 화면에서 선택할 수 있는 승인된 활성 사업장 소속 목록을 사업장과 함께 한 번에 조회한다.
+     */
+    @Query("""
+            select crew
+              from Crew crew
+              join fetch crew.workPlace workPlace
+             where crew.member.id = :memberId
+               and crew.joinStatus = :joinStatus
+               and crew.status = :crewStatus
+               and crew.deletedAt is null
+               and workPlace.status = :workPlaceStatus
+               and workPlace.deletedAt is null
+             order by workPlace.id asc
+            """)
+    List<Crew> findMyActiveApprovedWorkPlaces(
+            @Param("memberId") Long memberId,
+            @Param("joinStatus") CrewJoinStatus joinStatus,
+            @Param("crewStatus") CrewStatus crewStatus,
+            @Param("workPlaceStatus") WorkPlaceStatus workPlaceStatus
     );
 }
