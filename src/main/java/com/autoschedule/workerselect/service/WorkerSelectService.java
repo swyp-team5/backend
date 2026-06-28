@@ -77,14 +77,14 @@ public class WorkerSelectService {
             WorkerUnavailable workerUnavailable = WorkerUnavailable.create(
                     null,
                     member.getId(),
-                    workPlaceId,
+                    workPlace.getId(),
                     request.weekScheduleId()
             );
 
             workerUnavailableRepository.save(workerUnavailable);
 
             return WorkerSelectResponse.of(
-                    workPlaceId,
+                    workPlace.getId(),
                     member.getId(),
                     List.of()
             );
@@ -92,9 +92,10 @@ public class WorkerSelectService {
 
         // 4. 요청값에서 가져온 중복이 제거된 time_deatil_id값들이 사업장에 존재하는 값인지 조회한다.
         List<TimeDetail> timeDetails = timeDetailRepository
-                .findAllByIdInAndDay_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
+                .findAllByIdInAndDay_WeekSchedule_IdAndDay_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
                         uniqueTimeDetailIds,
-                        workPlaceId,
+                        request.weekScheduleId(),   // 추가: 현재 제출 대상 주간 스케줄
+                        workPlace.getId(),
                         TimeDetailStatus.ACTIVE
                 );
 
@@ -114,7 +115,7 @@ public class WorkerSelectService {
 
         List<WorkerUnavailable> toSave = timeDetails.stream()
                 .filter(td -> !alreadySubmittedIds.contains(td.getId()))
-                .map(td -> WorkerUnavailable.create(td, member.getId(), workPlaceId, request.weekScheduleId()))
+                .map(td -> WorkerUnavailable.create(td, member.getId(), workPlace.getId(), request.weekScheduleId()))
                 .toList();
 
         workerUnavailableRepository.saveAll(toSave);
@@ -125,7 +126,7 @@ public class WorkerSelectService {
                 .toList();
 
         return WorkerSelectResponse.of(
-                workPlaceId,
+                workPlace.getId(),
                 member.getId(),
                 timeDetailResponses
         );

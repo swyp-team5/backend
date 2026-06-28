@@ -37,4 +37,14 @@ public interface TimeDetailRepository extends JpaRepository<TimeDetail, Long> {
             TimeDetailStatus status
     );
 
+    /**
+     * 특정 사업장의 특정 주간 스케줄에 속하는 timeDetail 목록을 조회한다.
+     */
+    List<TimeDetail> findAllByIdInAndDay_WeekSchedule_IdAndDay_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
+            List<Long> ids,
+            Long weekScheduleId,
+            Long workPlaceId,
+            TimeDetailStatus status
+    );
+
 }
