@@ -228,9 +228,11 @@ public class WorkerSelectService {
             Long workPlaceId,
             Long memberId
     ) {
-        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndStatus(
+        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
                 memberId,
                 workPlaceId,
+                CrewJoinStatus.APPROVED,
+                CrewRole.WORKER,
                 CrewStatus.ACTIVE
         );
 
