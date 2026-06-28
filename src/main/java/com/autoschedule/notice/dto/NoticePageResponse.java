@@ -31,6 +31,18 @@ public record NoticePageResponse(
             Map<Long, String> writerNames,
             Map<Long, NoticeReactionSummaryResponse> reactionSummaries
     ) {
+        return from(notices, writerNames, reactionSummaries, Map.of());
+    }
+
+    /**
+     * 공지 페이지와 작성자 이름, 공감 요약, 이미지 목록을 공지 목록 응답으로 변환한다.
+     */
+    public static NoticePageResponse from(
+            Page<Notice> notices,
+            Map<Long, String> writerNames,
+            Map<Long, NoticeReactionSummaryResponse> reactionSummaries,
+            Map<Long, List<NoticeImageResponse>> imagesByNoticeId
+    ) {
         List<NoticeResponse> content = notices.getContent()
                 .stream()
                 .map(notice -> {
@@ -38,6 +50,7 @@ public record NoticePageResponse(
                     return NoticeResponse.from(
                             notice,
                             writerNames.get(notice.getWriterMemberId()),
+                            imagesByNoticeId.getOrDefault(notice.getId(), List.of()),
                             summary == null ? null : summary.myReactionType(),
                             summary == null ? List.of() : summary.reactions()
                     );

@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -82,6 +83,13 @@ public class Notice extends BaseEntity {
         this.title = title;
         this.content = content;
         this.representative = representative;
+    }
+
+    /**
+     * 전달받은 회원이 공지 작성자인지 확인한다.
+     */
+    public boolean isWrittenBy(Long memberId) {
+        return Objects.equals(this.writerMemberId, memberId);
     }
 
     /**

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -20,6 +21,9 @@ import com.autoschedule.member.domain.MemberRole;
 import com.autoschedule.member.domain.SocialProvider;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notification.service.FcmDeliveryProcessor;
+import com.autoschedule.notice.dto.NoticeImageObjectMetadata;
+import com.autoschedule.notice.dto.NoticeImageUploadUrl;
+import com.autoschedule.notice.repository.NoticeImageStorage;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
@@ -77,6 +81,9 @@ class NoticeApiIntegrationTest {
 
     @MockitoBean
     private FcmDeliveryProcessor fcmDeliveryProcessor;
+
+    @MockitoBean
+    private NoticeImageStorage noticeImageStorage;
 
     private Member owner;
     private Member worker;
@@ -155,6 +162,122 @@ class NoticeApiIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.writerMemberId").value(owner.getId()))
                 .andExpect(jsonPath("$.writerMemberName").value("owner"));
+    }
+
+    /**
+     * 사장은 S3에 직접 업로드한 공지 이미지를 공지 작성 시 최대 5장까지 연결할 수 있다.
+     */
+    @Test
+    void ownerCreatesNoticeWithUploadedImages() throws Exception {
+        when(noticeImageStorage.createUploadUrl(any()))
+                .thenAnswer(invocation -> {
+                    com.autoschedule.notice.dto.NoticeImageUploadTarget target = invocation.getArgument(0);
+                    return new NoticeImageUploadUrl(
+                        "https://s3.example.com/upload",
+                        target.objectKey(),
+                        target.storedFileName(),
+                        java.util.Map.of("Content-Type", "image/png"),
+                        300
+                    );
+                });
+        when(noticeImageStorage.getObjectMetadata(any()))
+                .thenReturn(new NoticeImageObjectMetadata(
+                        "image/png",
+                        1024,
+                        new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47}
+                ));
+
+        String uploadResponse = mockMvc.perform(post("/api/work-places/{workPlaceId}/notice-images/upload-url", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalFileName": "notice-image.png",
+                                  "contentType": "image/png",
+                                  "fileSize": 1024
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.objectKey").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode upload = objectMapper.readTree(uploadResponse);
+        String objectKey = upload.get("objectKey").asText();
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(noticeBodyWithImages(
+                                "notice with image",
+                                "content with image",
+                                false,
+                                upload.get("objectKey").asText()
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.images.length()").value(1))
+                .andExpect(jsonPath("$.images[0].objectKey").value(objectKey))
+                .andExpect(jsonPath("$.images[0].imageUrl").value("https://static.example.com/" + objectKey))
+                .andExpect(jsonPath("$.images[0].displayOrder").value(1));
+
+        Integer activeImageCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                          from notice_image
+                         where object_key = ?
+                           and status = 'ACTIVE'
+                           and notice_id is not null
+                        """,
+                Integer.class,
+                objectKey
+        );
+        assertThat(activeImageCount).isOne();
+    }
+
+    /**
+     * 근무자는 공지 이미지 업로드 URL을 발급받을 수 없다.
+     */
+    @Test
+    void workerCannotCreateNoticeImageUploadUrl() throws Exception {
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/notice-images/upload-url", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalFileName": "notice-image.png",
+                                  "contentType": "image/png",
+                                  "fileSize": 1024
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("4003"));
+    }
+
+    /**
+     * 공지 이미지는 하나의 공지 작성 요청에서 최대 5장까지만 첨부할 수 있다.
+     */
+    @Test
+    void noticeCreateRejectsMoreThanFiveImages() throws Exception {
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "too many images",
+                                  "content": "content",
+                                  "representative": false,
+                                  "imageObjectKeys": [
+                                    "notice-images/1/1/1.png",
+                                    "notice-images/1/1/2.png",
+                                    "notice-images/1/1/3.png",
+                                    "notice-images/1/1/4.png",
+                                    "notice-images/1/1/5.png",
+                                    "notice-images/1/1/6.png"
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
     }
 
     /**
@@ -493,6 +616,66 @@ class NoticeApiIntegrationTest {
     }
 
     /**
+     * 사업장 소유자라도 공지 작성자가 아니면 공지를 수정할 수 없다.
+     */
+    @Test
+    void ownerCannotUpdateNoticeWrittenByAnotherOwner() throws Exception {
+        Member anotherOwner = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE,
+                "notice-another-owner-subject",
+                "another-owner@test.com",
+                "other",
+                "01040000000",
+                MemberRole.OWNER
+        ));
+        JsonNode notice = createNotice(owner, workPlace.getId(), "작성자 검증", "수정 불가", false);
+        jdbcTemplate.update(
+                "update notice set writer_member_id = ? where notice_id = ?",
+                anotherOwner.getId(),
+                notice.get("noticeId").asLong()
+        );
+
+        mockMvc.perform(patch("/api/notices/{noticeId}", notice.get("noticeId").asLong())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "수정 시도",
+                                  "content": "수정되면 안 됨",
+                                  "representative": true
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("4003"));
+    }
+
+    /**
+     * 사업장 소유자라도 공지 작성자가 아니면 공지를 삭제할 수 없다.
+     */
+    @Test
+    void ownerCannotDeleteNoticeWrittenByAnotherOwner() throws Exception {
+        Member anotherOwner = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE,
+                "notice-another-delete-owner-subject",
+                "another-delete-owner@test.com",
+                "otherDel",
+                "01050000000",
+                MemberRole.OWNER
+        ));
+        JsonNode notice = createNotice(owner, workPlace.getId(), "삭제 작성자 검증", "삭제 불가", false);
+        jdbcTemplate.update(
+                "update notice set writer_member_id = ? where notice_id = ?",
+                anotherOwner.getId(),
+                notice.get("noticeId").asLong()
+        );
+
+        mockMvc.perform(delete("/api/notices/{noticeId}", notice.get("noticeId").asLong())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("4003"));
+    }
+
+    /**
      * 근무자는 공지를 작성할 수 없다.
      */
     @Test
@@ -784,6 +967,17 @@ class NoticeApiIntegrationTest {
                   "representative": %s
                 }
                 """.formatted(title, content, representative);
+    }
+
+    private String noticeBodyWithImages(String title, String content, boolean representative, String objectKey) {
+        return """
+                {
+                  "title": "%s",
+                  "content": "%s",
+                  "representative": %s,
+                  "imageObjectKeys": ["%s"]
+                }
+                """.formatted(title, content, representative, objectKey);
     }
 
     private String commentBody(String content) {

@@ -16,6 +16,7 @@ public final class TestDatabaseCleaner {
             "fcm_token",
             "notice_comment",
             "notice_reaction",
+            "notice_image",
             "notice",
             "member_terms_agreement",
             "terms",

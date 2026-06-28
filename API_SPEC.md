@@ -1129,7 +1129,101 @@ Authorization: Bearer {OWNER_ACCESS_TOKEN}
 
 공지사항은 사업장 단위 게시글이다. 사장님은 본인 소유 사업장의 공지를 작성, 수정, 삭제할 수 있고 근무자는 본인이 소속된 사업장의 공지만 조회할 수 있다.
 
-### 8.1 사업장 공지 작성
+### 8.1 공지 이미지 업로드 URL 발급
+
+공지 작성 화면에서 첨부할 이미지를 S3에 직접 업로드하기 위한 presigned PUT URL을 발급한다.
+공지 이미지는 프로필 이미지와 같은 S3 버킷을 사용할 수 있지만, object key prefix는 `notice-images`로 분리한다.
+
+```http
+POST /api/work-places/{workPlaceId}/notice-images/upload-url
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 공지 이미지를 첨부할 사업장 ID |
+
+#### 요청 본문
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| originalFileName | string | Y | 원본 파일명. 경로 문자와 제어 문자 불가, 최대 255자 |
+| contentType | string | Y | 이미지 MIME type. `image/jpeg`, `image/png`, `image/webp` 허용 |
+| fileSize | number | Y | 파일 크기 byte. 1 byte 이상 10MB 이하 |
+
+#### 요청 예시
+
+```json
+{
+  "originalFileName": "notice-image.png",
+  "contentType": "image/png",
+  "fileSize": 1024
+}
+```
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "uploadUrl": "https://s3-presigned-upload-url",
+  "objectKey": "notice-images/1/1/7f5d8b4b.png",
+  "storedFileName": "7f5d8b4b.png",
+  "headers": {
+    "Content-Type": "image/png"
+  },
+  "expiresInSeconds": 300
+}
+```
+
+#### 클라이언트 처리 흐름
+
+1. 공지 작성 화면에서 이미지 파일을 선택한다.
+2. 이미지 1장마다 이 API를 호출해 `uploadUrl`, `objectKey`, `headers`를 받는다.
+3. `uploadUrl`로 S3 PUT 업로드를 수행한다.
+4. S3 PUT 성공 후 공지 작성 API의 `imageObjectKeys` 배열에 `objectKey`를 담아 전송한다.
+
+#### S3 PUT 요청 주의사항
+
+- `uploadUrl`은 백엔드 API URL이 아니라 AWS S3 URL이다.
+- S3 PUT 요청에는 백엔드 JWT `Authorization` 헤더를 넣지 않는다.
+- 응답의 `headers`를 S3 PUT 요청에 그대로 포함한다.
+- S3 PUT body에는 이미지 파일 byte를 그대로 넣는다.
+- S3 PUT 성공 응답은 보통 `200 OK`이고 body가 비어 있을 수 있다.
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 발급할 수 있다.
+- 사장님 본인이 소유한 활성 사업장에 대해서만 발급할 수 있다.
+- 공지 이미지는 최대 10MB까지 허용한다.
+- 공지 1개에는 최대 5장까지 첨부할 수 있다.
+- 허용 파일 형식은 JPG, PNG, WEBP다.
+- 서버는 업로드 URL 발급 시 1차로 파일명, content type, 파일 크기를 검증한다.
+- 서버는 공지 작성 시 S3 객체의 실제 content type, 파일 크기, 매직 바이트를 다시 검증한다.
+- 발급된 object key는 `notice-images/{workPlaceId}/{ownerMemberId}/{storedFileName}` 형식이다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 파일명, content type, 파일 크기 검증 실패 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아니거나 본인 사업장이 아님 |
+| 404 | 4004 | 조회 가능한 사업장을 찾을 수 없음 |
+
+### 8.2 사업장 공지 작성
 
 ```http
 POST /api/work-places/{workPlaceId}/notices
@@ -1197,7 +1291,71 @@ OWNER
 - 대표 공지는 사업장당 최대 1개다.
 - 새 공지를 대표 공지로 작성하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
 
-### 8.2 사업장 공지 목록 조회
+#### 8.2.1 공지 작성 시 이미지 첨부
+
+공지 이미지를 첨부하려면 공지 작성 API를 호출하기 전에 `8.1 공지 이미지 업로드 URL 발급` API와 S3 PUT 업로드를 먼저 완료해야 한다.
+
+공지 작성 요청 본문에는 선택 필드 `imageObjectKeys`를 추가할 수 있다.
+
+```json
+{
+  "title": "개인 물품 보관 관련 안내",
+  "content": "개인 물품은 지정된 보관함을 이용해주세요.",
+  "representative": false,
+  "imageObjectKeys": [
+    "notice-images/1/1/7f5d8b4b.png",
+    "notice-images/1/1/9a1c0e21.png"
+  ]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| imageObjectKeys | string[] | N | S3 PUT 업로드에 성공한 공지 이미지 object key 목록. 최대 5개 |
+
+공지 작성 성공 응답의 `images` 배열에는 확정된 이미지 메타데이터가 포함된다.
+이미지가 없는 공지는 빈 배열을 반환한다.
+
+```json
+{
+  "noticeId": 1,
+  "workPlaceId": 1,
+  "writerMemberId": 1,
+  "writerMemberName": "김단비",
+  "title": "개인 물품 보관 관련 안내",
+  "content": "개인 물품은 지정된 보관함을 이용해주세요.",
+  "representative": false,
+  "status": "ACTIVE",
+  "images": [
+    {
+      "noticeImageId": 1,
+      "originalFileName": "notice-image.png",
+      "storedFileName": "7f5d8b4b.png",
+      "objectKey": "notice-images/1/1/7f5d8b4b.png",
+      "imageUrl": "https://static.example.com/notice-images/1/1/7f5d8b4b.png",
+      "contentType": "image/png",
+      "fileSize": 1024,
+      "displayOrder": 1
+    }
+  ],
+  "myReactionType": null,
+  "reactions": [],
+  "createdAt": "2026-06-28T14:00:00",
+  "updatedAt": "2026-06-28T14:00:00"
+}
+```
+
+#### 이미지 첨부 규칙
+
+- 공지 1개당 이미지는 최대 5장이다.
+- `imageObjectKeys` 순서가 공지 이미지 노출 순서가 된다.
+- 같은 요청 안에서 동일한 `objectKey`를 중복 전달할 수 없다.
+- `objectKey`는 현재 사장님이 해당 사업장에서 발급받은 PENDING 이미지여야 한다.
+- 서버는 공지 작성 시 S3에 실제 업로드된 파일의 content type, 파일 크기, 매직 바이트를 검증한다.
+- 검증에 성공한 이미지만 `ACTIVE` 상태가 되며 공지에 연결된다.
+- 검증 실패 시 공지는 생성되지 않는다.
+
+### 8.3 사업장 공지 목록 조회
 
 ```http
 GET /api/work-places/{workPlaceId}/notices?page=0&size=20
@@ -1278,7 +1436,7 @@ OWNER, WORKER
 - `myReactionType`은 로그인한 회원이 선택한 공감이다. 선택한 공감이 없으면 `null`이다.
 - `reactions`는 6개 공감 타입의 현재 활성 집계이며, 집계가 0인 타입도 포함한다.
 
-### 8.3 사업장 대표 공지 조회
+### 8.4 사업장 대표 공지 조회
 
 ```http
 GET /api/work-places/{workPlaceId}/notices/representative
@@ -1339,7 +1497,7 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-### 8.4 공지 단건 조회
+### 8.5 공지 단건 조회
 
 ```http
 GET /api/notices/{noticeId}
@@ -1354,7 +1512,7 @@ Authorization: Bearer {accessToken}
 
 응답 형식은 `8.1 사업장 공지 작성` 성공 응답과 동일하다.
 
-### 8.5 공지 공감 선택/변경/취소
+### 8.6 공지 공감 선택/변경/취소
 
 근무자가 공지에 공감을 남긴다. 이미 같은 공감을 선택한 상태에서 다시 같은 공감을 요청하면 공감을 취소한다.
 
@@ -1445,7 +1603,7 @@ CHECK 활성 + CHECK 요청 -> 공감 취소
 공감 취소 상태 + PROUD 요청 -> PROUD 활성
 ```
 
-### 8.6 공지 공감 취소
+### 8.7 공지 공감 취소
 
 근무자가 현재 선택한 공감을 취소한다. 이미 선택한 공감이 없어도 성공 응답을 반환한다.
 
@@ -1501,7 +1659,7 @@ WORKER
 - 근무자는 승인된 활성 크루로 소속된 사업장의 공지에 대해서만 공감을 취소할 수 있다.
 - 현재 활성 공감이 없으면 상태 변경 없이 현재 공감 집계만 반환한다.
 
-### 8.7 홈 대표 공지 조회
+### 8.8 홈 대표 공지 조회
 
 홈 화면에서 대표 공지만 가볍게 노출하기 위한 전용 API다. 기존 대표 공지 조회 API보다 응답 필드가 작다.
 
@@ -1551,7 +1709,7 @@ OWNER, WORKER
 - 대표 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
 
-### 8.8 홈 최신 공지 조회
+### 8.9 홈 최신 공지 조회
 
 홈 화면에서 가장 최근 작성된 공지 1건을 가볍게 노출하기 위한 전용 API다. 대표 공지 여부와 무관하게 활성 공지 중 최신 1건을 반환한다.
 
@@ -1603,7 +1761,7 @@ OWNER, WORKER
 - 최신 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
 
-### 8.9 공지 수정
+### 8.10 공지 수정
 
 ```http
 PATCH /api/notices/{noticeId}
@@ -1625,7 +1783,7 @@ OWNER
 - 사장님 본인이 소유한 사업장의 공지만 수정할 수 있다.
 - 수정으로 대표 공지를 지정하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
 
-### 8.10 공지 삭제
+### 8.11 공지 삭제
 
 ```http
 DELETE /api/notices/{noticeId}
@@ -1651,7 +1809,7 @@ OWNER
 - 삭제는 물리 삭제가 아니라 `DELETED` 상태와 `deleted_at`으로 처리한다.
 - 대표 공지를 삭제하면 해당 사업장은 대표 공지가 없는 상태가 된다.
 
-### 8.11 공지 댓글 작성
+### 8.12 공지 댓글 작성
 
 ```http
 POST /api/notices/{noticeId}/comments
@@ -1698,7 +1856,7 @@ OWNER
 }
 ```
 
-### 8.12 공지 댓글 조회
+### 8.13 공지 댓글 조회
 
 ```http
 GET /api/notices/{noticeId}/comments?cursorId=10&size=20
@@ -1739,7 +1897,7 @@ Authorization: Bearer {accessToken}
 - 다음 페이지가 없으면 `nextCursorId`는 null이고 `hasNext`는 false다.
 - 삭제된 댓글은 조회하지 않는다.
 
-### 8.13 공지 댓글 수정
+### 8.14 공지 댓글 수정
 
 ```http
 PATCH /api/notices/{noticeId}/comments/{commentId}
@@ -1755,7 +1913,7 @@ OWNER
 
 요청 본문과 응답 형식은 `8.11 공지 댓글 작성`과 동일하다.
 
-### 8.14 공지 댓글 삭제
+### 8.15 공지 댓글 삭제
 
 ```http
 DELETE /api/notices/{noticeId}/comments/{commentId}
@@ -2177,7 +2335,54 @@ idx_notice_work_place_status_deleted_created_id (work_place_id, status, deleted_
 idx_notice_work_place_representative_status_deleted (work_place_id, representative, status, deleted_at)
 ```
 
-### 11.2 notice_comment
+### 11.2 notice_image
+
+`notice_image`는 공지 이미지 업로드 시도와 공지에 연결된 이미지 메타데이터를 저장한다.
+실제 파일은 S3에 저장하며, DB에는 파일 조회와 운영에 필요한 메타데이터만 저장한다.
+최종 관계는 `notice_image -> notice`이며, `work_place`와는 직접 FK 관계를 갖지 않는다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | --- | --- |
+| notice_image_id | BIGINT | N | PK |
+| notice_id | BIGINT | Y | 공지 ID, `notice` FK. PENDING 단계에서는 NULL |
+| uploader_member_id | BIGINT | N | 업로드 URL을 발급받은 사장님 회원 ID, FK 없음 |
+| original_file_name | VARCHAR(255) | N | 원본 파일명 |
+| stored_file_name | VARCHAR(100) | N | S3 저장 파일명 |
+| object_key | VARCHAR(500) | N | S3 object key |
+| image_url | VARCHAR(700) | N | 앱 표시용 public image URL |
+| content_type | VARCHAR(50) | N | 이미지 content type |
+| file_size | BIGINT | N | 파일 크기 byte |
+| display_order | INT | N | 공지 안에서 이미지 노출 순서. PENDING은 0, ACTIVE는 1~5 |
+| status | VARCHAR(20) | N | 이미지 상태 |
+| uploaded_at | DATETIME | Y | S3 업로드 검증 후 확정 시각 |
+| created_at | DATETIME | N | 생성 시각 |
+| updated_at | DATETIME | N | 수정 시각 |
+| deleted_at | DATETIME | Y | 삭제 시각 |
+
+#### 상태값
+
+```text
+PENDING
+ACTIVE
+DELETED
+```
+
+#### 제약조건
+
+- `notice_id`는 `notice.notice_id`를 참조한다.
+- `uploader_member_id`는 FK를 걸지 않는 비정규화 컬럼이다.
+- `object_key`는 전체 테이블에서 유일해야 한다.
+- `display_order`는 0~5만 허용한다.
+
+#### 인덱스
+
+```text
+uk_notice_image_object_key (object_key)
+idx_notice_image_notice_status_deleted_order (notice_id, status, deleted_at, display_order, notice_image_id)
+idx_notice_image_uploader_object_status (uploader_member_id, object_key, status, deleted_at)
+```
+
+### 11.3 notice_comment
 
 `notice_comment`는 공지별 사장님 댓글을 저장한다.
 
@@ -2210,7 +2415,7 @@ DELETED
 idx_notice_comment_notice_status_deleted_id (notice_id, status, deleted_at, notice_comment_id)
 ```
 
-### 11.3 notice_reaction
+### 11.4 notice_reaction
 
 `notice_reaction`은 근무자가 공지에 선택한 공감을 저장한다.
 
@@ -2912,6 +3117,17 @@ idx_profile_image_member_status_deleted (member_id, status, deleted_at)
 | AWS_S3_PROFILE_IMAGE_OBJECT_KEY_PREFIX | S3 object key prefix. 기본 `profile-images` |
 | AWS_S3_PROFILE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS | presigned upload URL 만료 시간. 기본 300초 |
 | AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES | 최대 파일 크기. 기본 10485760 byte |
+
+#### 공지 이미지 S3 운영 설정
+
+| 환경변수 | 설명 |
+| --- | --- |
+| AWS_S3_NOTICE_IMAGE_BUCKET | 공지 이미지 S3 버킷명. 프로필 이미지와 같은 버킷 사용 가능 |
+| AWS_S3_NOTICE_IMAGE_PUBLIC_BASE_URL | 공지 이미지 앱 표시용 public base URL |
+| AWS_S3_NOTICE_IMAGE_OBJECT_KEY_PREFIX | 공지 이미지 S3 object key prefix. 기본 `notice-images` |
+| AWS_S3_NOTICE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS | 공지 이미지 presigned upload URL 만료 시간. 기본 300초 |
+| AWS_S3_NOTICE_IMAGE_MAX_SIZE_BYTES | 공지 이미지 최대 파일 크기. 기본 10485760 byte |
+| NOTICE_IMAGE_MAX_COUNT | 공지 1개당 최대 이미지 첨부 개수. 기본 5 |
 
 #### S3 버킷 정책 요약
 

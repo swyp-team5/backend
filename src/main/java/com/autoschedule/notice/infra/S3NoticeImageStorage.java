@@ -1,12 +1,12 @@
-package com.autoschedule.member.infra;
+package com.autoschedule.notice.infra;
 
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
-import com.autoschedule.member.config.ProfileImageProperties;
-import com.autoschedule.member.dto.ProfileImageObjectMetadata;
-import com.autoschedule.member.repository.ProfileImageStorage;
-import com.autoschedule.member.dto.ProfileImageUploadTarget;
-import com.autoschedule.member.dto.ProfileImageUploadUrl;
+import com.autoschedule.notice.config.NoticeImageProperties;
+import com.autoschedule.notice.dto.NoticeImageObjectMetadata;
+import com.autoschedule.notice.dto.NoticeImageUploadTarget;
+import com.autoschedule.notice.dto.NoticeImageUploadUrl;
+import com.autoschedule.notice.repository.NoticeImageStorage;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,25 +28,25 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 
 /**
- * AWS S3와 통신하여 프로필 이미지 presigned URL 발급과 객체 검증, 삭제를 담당한다.
+ * AWS S3와 통신하여 공지 이미지 presigned URL 발급, 객체 검증, 삭제를 담당한다.
  */
 @Component
 @RequiredArgsConstructor
-public class S3ProfileImageStorage implements ProfileImageStorage {
+public class S3NoticeImageStorage implements NoticeImageStorage {
 
     private static final String MAGIC_BYTE_RANGE = "bytes=0-63";
 
-    private final ProfileImageProperties properties;
-    @Qualifier("profileImageS3Client")
-    private final S3Client profileImageS3Client;
-    @Qualifier("profileImageS3Presigner")
-    private final S3Presigner profileImageS3Presigner;
+    private final NoticeImageProperties properties;
+    @Qualifier("noticeImageS3Client")
+    private final S3Client noticeImageS3Client;
+    @Qualifier("noticeImageS3Presigner")
+    private final S3Presigner noticeImageS3Presigner;
 
     /**
      * 클라이언트가 S3로 직접 PUT 업로드할 수 있는 presigned URL을 생성한다.
      */
     @Override
-    public ProfileImageUploadUrl createUploadUrl(ProfileImageUploadTarget target) {
+    public NoticeImageUploadUrl createUploadUrl(NoticeImageUploadTarget target) {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(properties.bucket())
                 .key(target.objectKey())
@@ -58,7 +58,7 @@ public class S3ProfileImageStorage implements ProfileImageStorage {
                 .putObjectRequest(putObjectRequest)
                 .build();
 
-        PresignedPutObjectRequest presignedRequest = profileImageS3Presigner.presignPutObject(presignRequest);
+        PresignedPutObjectRequest presignedRequest = noticeImageS3Presigner.presignPutObject(presignRequest);
         Map<String, String> signedHeaders = presignedRequest.signedHeaders()
                 .entrySet()
                 .stream()
@@ -73,7 +73,7 @@ public class S3ProfileImageStorage implements ProfileImageStorage {
             signedHeaders = Map.copyOf(headersWithContentType);
         }
 
-        return new ProfileImageUploadUrl(
+        return new NoticeImageUploadUrl(
                 presignedRequest.url().toString(),
                 target.objectKey(),
                 target.storedFileName(),
@@ -86,33 +86,33 @@ public class S3ProfileImageStorage implements ProfileImageStorage {
      * S3 객체의 HeadObject 정보와 매직 바이트 검증용 앞부분 바이트를 조회한다.
      */
     @Override
-    public ProfileImageObjectMetadata getObjectMetadata(String objectKey) {
+    public NoticeImageObjectMetadata getObjectMetadata(String objectKey) {
         try {
-            HeadObjectResponse headObject = profileImageS3Client.headObject(HeadObjectRequest.builder()
+            HeadObjectResponse headObject = noticeImageS3Client.headObject(HeadObjectRequest.builder()
                     .bucket(properties.bucket())
                     .key(objectKey)
                     .build());
-            ResponseBytes<GetObjectResponse> firstBytes = profileImageS3Client.getObjectAsBytes(GetObjectRequest.builder()
+            ResponseBytes<GetObjectResponse> firstBytes = noticeImageS3Client.getObjectAsBytes(GetObjectRequest.builder()
                     .bucket(properties.bucket())
                     .key(objectKey)
                     .range(MAGIC_BYTE_RANGE)
                     .build());
-            return new ProfileImageObjectMetadata(
+            return new NoticeImageObjectMetadata(
                     headObject.contentType(),
                     headObject.contentLength(),
                     firstBytes.asByteArray()
             );
         } catch (NoSuchKeyException exception) {
-            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "업로드된 프로필 이미지 파일을 찾을 수 없습니다.");
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "업로드된 공지 이미지 파일을 찾을 수 없습니다.");
         }
     }
 
     /**
-     * S3 객체를 삭제한다.
+     * S3 공지 이미지 객체를 삭제한다.
      */
     @Override
     public void deleteObject(String objectKey) {
-        profileImageS3Client.deleteObject(DeleteObjectRequest.builder()
+        noticeImageS3Client.deleteObject(DeleteObjectRequest.builder()
                 .bucket(properties.bucket())
                 .key(objectKey)
                 .build());
