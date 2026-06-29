@@ -35,8 +35,10 @@ public interface WorkerUnavailableRepository extends JpaRepository<WorkerUnavail
     /**
      * 여러 회원 중 근무 불가 정보를 제출한 회원 목록을 조회한다.
      */
-    List<WorkerUnavailable> findByMemberIdInAndStatusAndDeletedAtIsNull(
-            Collection<Long> memberIds,
+    List<WorkerUnavailable> findByMemberIdInAndWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
+            List<Long> memberIds,
+            Long workPlaceId,
+            Long weekScheduleId,
             WorkerUnavailableStatus status
     );
 

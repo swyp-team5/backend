@@ -7,6 +7,7 @@ import java.util.List;
  */
 public record WorkerSelectStatusResponse(
         Long workPlaceId,
+        Long weekScheduleId,
         List<WorkerSelectMemberStatusResponse> workers
 ) {
 
@@ -15,10 +16,12 @@ public record WorkerSelectStatusResponse(
      */
     public static WorkerSelectStatusResponse of(
             Long workPlaceId,
+            Long weekScheduleId,
             List<WorkerSelectMemberStatusResponse> workers
     ) {
         return new WorkerSelectStatusResponse(
                 workPlaceId,
+                weekScheduleId,
                 workers
         );
     }

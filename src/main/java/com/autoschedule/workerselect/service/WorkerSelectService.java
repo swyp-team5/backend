@@ -11,7 +11,10 @@ import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.schedulecondition.domain.TimeDetail;
 import com.autoschedule.schedulecondition.domain.TimeDetailStatus;
+import com.autoschedule.schedulecondition.domain.WeekSchedule;
+import com.autoschedule.schedulecondition.domain.WeekScheduleStatus;
 import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
+import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workerselect.domain.WorkerUnavailable;
 import com.autoschedule.workerselect.domain.WorkerUnavailableStatus;
 import com.autoschedule.workerselect.dto.WorkerSelectMemberStatusResponse;
@@ -44,6 +47,7 @@ public class WorkerSelectService {
     private final CrewRepository crewRepository;
     private final TimeDetailRepository timeDetailRepository;
     private final WorkerUnavailableRepository workerUnavailableRepository;
+    private final WeekScheduleRepository weekScheduleRepository;
 
     /**
      * 근무자가 선택한 불가능 근무 타임을 저장한다.
@@ -149,11 +153,13 @@ public class WorkerSelectService {
     @Transactional(readOnly = true)
     public WorkerSelectStatusResponse getWorkerSelectStatus(
             Long ownerMemberId,
-            Long workPlaceId
+            Long workPlaceId,
+            Long weekScheduleId
     ) {
         // 1. 사장 및 사업장 검증
         Member owner = findActiveMember(ownerMemberId); // 현재 로그인한 사장 회원을 조회함
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId()); // 사업장 존재 + 사장 권한 확인
+        WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId()); // 사업장 + 주차 스케줄 조건 검증
 
         // 2. 사업장의 근무자 크루 목록 조회
         List<Crew> crews = crewRepository.findByWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
@@ -169,13 +175,14 @@ public class WorkerSelectService {
                 .toList();
 
         List<Long> submittedMemberIds = workerUnavailableRepository
-                .findByMemberIdInAndStatusAndDeletedAtIsNull(
+                .findByMemberIdInAndWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
                         crewMemberIds,
+                        workPlace.getId(),
+                        weekSchedule.getId(),
                         WorkerUnavailableStatus.ACTIVE
                 )
                 .stream()
                 .map(WorkerUnavailable::getMemberId)
-                .distinct()
                 .toList();
 
         // 4. 제출 여부 포함 응답 생성
@@ -188,6 +195,7 @@ public class WorkerSelectService {
 
         return WorkerSelectStatusResponse.of(
                 workPlace.getId(),
+                weekSchedule.getId(),
                 workers
         );
     }
@@ -230,6 +238,18 @@ public class WorkerSelectService {
         }
 
         return workPlace;
+    }
+
+    /**
+     * 특정 사업장에 해당 주차의 스케줄 조건이 있는지 검증한다.
+     */
+    private WeekSchedule findActiveWeekSchedule(Long weekScheduleId, Long workPlaceId) {
+        return weekScheduleRepository.findByIdAndWorkPlaceIdAndStatusAndDeletedAtIsNull(
+                        weekScheduleId,
+                        workPlaceId,
+                        WeekScheduleStatus.ACTIVE
+                )
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주차의 스케줄 조건을 찾을 수 없습니다."));
     }
 
     /**

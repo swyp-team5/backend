@@ -233,10 +233,12 @@ class WorkerSelectApiIntegrationTest {
      */
     @Test
     void getWorkerSelectStatus_success() throws Exception {
-        mockMvc.perform(get("/api/work-places/{workPlaceId}/worker-select/status", workPlace.getId())
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        workPlace.getId(), weekSchedule.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.weekScheduleId").value(weekSchedule.getId()))
                 .andExpect(jsonPath("$.workers").isArray())
                 .andExpect(jsonPath("$.workers.length()").value(1));
     }
@@ -246,7 +248,8 @@ class WorkerSelectApiIntegrationTest {
      */
     @Test
     void getWorkerSelectStatus_submittedFalseBeforeSubmission() throws Exception {
-        mockMvc.perform(get("/api/work-places/{workPlaceId}/worker-select/status", workPlace.getId())
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        workPlace.getId(), weekSchedule.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workers[0].memberId").value(worker.getId()))
@@ -265,7 +268,8 @@ class WorkerSelectApiIntegrationTest {
                         .content(buildRequestWithTimeDetails(List.of(timeDetail.getId()))))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(get("/api/work-places/{workPlaceId}/worker-select/status", workPlace.getId())
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        workPlace.getId(), weekSchedule.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workers[0].memberId").value(worker.getId()))
@@ -389,7 +393,8 @@ class WorkerSelectApiIntegrationTest {
                 MemberRole.OWNER
         ));
 
-        mockMvc.perform(get("/api/work-places/{workPlaceId}/worker-select/status", workPlace.getId())
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        workPlace.getId(), weekSchedule.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(otherOwner)))
                 .andExpect(status().isForbidden());
     }
@@ -399,7 +404,8 @@ class WorkerSelectApiIntegrationTest {
      */
     @Test
     void getWorkerSelectStatus_failsWhenWorkerRequests() throws Exception {
-        mockMvc.perform(get("/api/work-places/{workPlaceId}/worker-select/status", workPlace.getId())
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        workPlace.getId(), weekSchedule.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
                 .andExpect(status().isForbidden());
     }
@@ -443,7 +449,19 @@ class WorkerSelectApiIntegrationTest {
      */
     @Test
     void getWorkerSelectStatus_failsWhenWorkPlaceNotFound() throws Exception {
-        mockMvc.perform(get("/api/work-places/{workPlaceId}/worker-select/status", 99999L)
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        99999L, weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 존재하지 않는 weekScheduleId로 현황 조회하면 404를 반환한다.
+     */
+    @Test
+    void getWorkerSelectStatus_failsWhenWeekScheduleNotFound() throws Exception {
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status",
+                        workPlace.getId(), 99999L)
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isNotFound());
     }

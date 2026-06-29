@@ -47,14 +47,16 @@ public class WorkerSelectController {
      * 사업장 근무자들의 근무 불가 제출 여부를 조회한다.
      */
     @OwnerOnly
-    @GetMapping("/api/work-places/{workPlaceId}/worker-select/status")
+    @GetMapping("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status")
     public WorkerSelectStatusResponse getWorkerSelectStatus(
             @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
-            @PathVariable Long workPlaceId
+            @PathVariable Long workPlaceId,
+            @PathVariable Long weekScheduleId
     ) {
         return workerSelectService.getWorkerSelectStatus(
                 principal.memberId(),
-                workPlaceId
+                workPlaceId,
+                weekScheduleId
         );
     }
 
