@@ -8,12 +8,15 @@ import com.autoschedule.notice.dto.NoticeCommentCursorResponse;
 import com.autoschedule.notice.dto.NoticeCommentRequest;
 import com.autoschedule.notice.dto.NoticeCommentResponse;
 import com.autoschedule.notice.dto.NoticeCreateRequest;
+import com.autoschedule.notice.dto.NoticeImageUploadUrlRequest;
+import com.autoschedule.notice.dto.NoticeImageUploadUrlResponse;
 import com.autoschedule.notice.dto.NoticePageResponse;
 import com.autoschedule.notice.dto.NoticeReactionRequest;
 import com.autoschedule.notice.dto.NoticeReactionSummaryResponse;
 import com.autoschedule.notice.dto.NoticeResponse;
 import com.autoschedule.notice.dto.NoticeUpdateRequest;
 import com.autoschedule.notice.dto.RepresentativeNoticeResponse;
+import com.autoschedule.notice.service.NoticeImageService;
 import com.autoschedule.notice.service.NoticeService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -43,6 +46,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class NoticeController {
 
     private final NoticeService noticeService;
+    private final NoticeImageService noticeImageService;
+
+    /**
+     * 사장님이 공지 이미지 S3 직접 업로드 URL을 발급받는다.
+     */
+    @OwnerOnly
+    @PostMapping("/api/work-places/{workPlaceId}/notice-images/upload-url")
+    public NoticeImageUploadUrlResponse createNoticeImageUploadUrl(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
+            @Valid @RequestBody NoticeImageUploadUrlRequest request
+    ) {
+        return noticeImageService.createUploadUrl(principal.memberId(), workPlaceId, request);
+    }
 
     /**
      * 사장님이 사업장 공지를 작성한다.

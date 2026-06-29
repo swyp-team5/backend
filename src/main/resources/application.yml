@@ -38,3 +38,13 @@ profile:
     object-key-prefix: ${AWS_S3_PROFILE_IMAGE_OBJECT_KEY_PREFIX:profile-images}
     upload-url-expires-seconds: ${AWS_S3_PROFILE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS:300}
     max-size-bytes: ${AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES:10485760}
+
+notice:
+  image:
+    region: ${AWS_REGION:ap-northeast-2}
+    bucket: ${AWS_S3_NOTICE_IMAGE_BUCKET:${AWS_S3_PROFILE_IMAGE_BUCKET:autoschedule-profile-image-local}}
+    public-base-url: ${AWS_S3_NOTICE_IMAGE_PUBLIC_BASE_URL:${AWS_S3_PROFILE_IMAGE_PUBLIC_BASE_URL:https://static.example.com}}
+    object-key-prefix: ${AWS_S3_NOTICE_IMAGE_OBJECT_KEY_PREFIX:notice-images}
+    upload-url-expires-seconds: ${AWS_S3_NOTICE_IMAGE_UPLOAD_URL_EXPIRES_SECONDS:300}
+    max-size-bytes: ${AWS_S3_NOTICE_IMAGE_MAX_SIZE_BYTES:10485760}
+    max-count: ${NOTICE_IMAGE_MAX_COUNT:5}

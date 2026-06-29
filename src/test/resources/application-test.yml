@@ -52,3 +52,13 @@ profile:
     object-key-prefix: profile-images
     upload-url-expires-seconds: 300
     max-size-bytes: 10485760
+
+notice:
+  image:
+    region: ap-northeast-2
+    bucket: autoschedule-notice-test
+    public-base-url: https://static.example.com
+    object-key-prefix: notice-images
+    upload-url-expires-seconds: 300
+    max-size-bytes: 10485760
+    max-count: 5

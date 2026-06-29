@@ -23,6 +23,7 @@ import com.autoschedule.notice.dto.NoticeCommentCursorResponse;
 import com.autoschedule.notice.dto.NoticeCommentRequest;
 import com.autoschedule.notice.dto.NoticeCommentResponse;
 import com.autoschedule.notice.dto.NoticeCreateRequest;
+import com.autoschedule.notice.dto.NoticeImageResponse;
 import com.autoschedule.notice.dto.NoticePageResponse;
 import com.autoschedule.notice.dto.NoticeReactionCountResponse;
 import com.autoschedule.notice.dto.NoticeReactionRequest;
@@ -34,6 +35,7 @@ import com.autoschedule.notice.repository.NoticeReactionCountProjection;
 import com.autoschedule.notice.repository.NoticeReactionRepository;
 import com.autoschedule.notice.repository.NoticeCommentRepository;
 import com.autoschedule.notice.repository.NoticeRepository;
+import com.autoschedule.notice.service.NoticeImageService.PreparedNoticeImage;
 import com.autoschedule.notification.domain.NotificationType;
 import com.autoschedule.notification.domain.PushPolicy;
 import com.autoschedule.notification.dto.NotificationSendCommand;
@@ -69,15 +71,21 @@ public class NoticeService {
     private final NoticeRepository noticeRepository;
     private final NoticeCommentRepository noticeCommentRepository;
     private final NoticeReactionRepository noticeReactionRepository;
+    private final NoticeImageService noticeImageService;
     private final NotificationCommandService notificationCommandService;
 
     /**
      * 사장님이 소유한 사업장에 새 공지를 작성한다.
      */
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public NoticeResponse createNotice(Long ownerMemberId, Long workPlaceId, NoticeCreateRequest request) {
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
+        List<PreparedNoticeImage> preparedImages = noticeImageService.prepareImagesForNotice(
+                workPlace,
+                owner.getId(),
+                request.imageObjectKeys()
+        );
 
         Notice notice = noticeRepository.save(Notice.create(
                 workPlace,
@@ -87,9 +95,10 @@ public class NoticeService {
                 request.representative()
         ));
         applyRepresentativePolicy(notice);
+        List<NoticeImageResponse> images = noticeImageService.activatePreparedImages(notice, preparedImages);
         sendNoticeCreatedNotifications(workPlace, notice);
 
-        return NoticeResponse.from(notice, owner.getName());
+        return NoticeResponse.from(notice, owner.getName(), images, null, List.of());
     }
 
     /**
@@ -144,7 +153,10 @@ public class NoticeService {
                 notices.getContent(),
                 principal.memberId()
         );
-        return NoticePageResponse.from(notices, writerNames, reactionSummaries);
+        Map<Long, List<NoticeImageResponse>> imagesByNoticeId = noticeImageService.findActiveImagesByNoticeIds(
+                notices.getContent().stream().map(Notice::getId).toList()
+        );
+        return NoticePageResponse.from(notices, writerNames, reactionSummaries, imagesByNoticeId);
     }
 
     /**
@@ -222,11 +234,12 @@ public class NoticeService {
         Member owner = findActiveMember(ownerMemberId);
         Notice notice = findActiveNotice(noticeId);
         validateOwnedActiveWorkPlace(notice.getWorkPlace().getId(), owner.getId());
+        validateNoticeWriter(notice, owner.getId());
 
         notice.update(request.title(), request.content(), request.representative());
         applyRepresentativePolicy(notice);
 
-        return NoticeResponse.from(notice, owner.getName());
+        return NoticeResponse.from(notice, owner.getName(), noticeImageService.findActiveImages(notice.getId()), null, List.of());
     }
 
     /**
@@ -237,6 +250,8 @@ public class NoticeService {
         Member owner = findActiveMember(ownerMemberId);
         Notice notice = findActiveNotice(noticeId);
         validateOwnedActiveWorkPlace(notice.getWorkPlace().getId(), owner.getId());
+        validateNoticeWriter(notice, owner.getId());
+        noticeImageService.deleteActiveImages(notice);
         notice.markDeleted(LocalDateTime.now());
     }
 
@@ -398,6 +413,15 @@ public class NoticeService {
     }
 
     /**
+     * 공지 수정과 삭제를 작성자 본인에게만 허용한다.
+     */
+    private void validateNoticeWriter(Notice notice, Long ownerMemberId) {
+        if (!notice.isWrittenBy(ownerMemberId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, "공지 작성자만 수정하거나 삭제할 수 있습니다.");
+        }
+    }
+
+    /**
      * 활성 공지를 조회한다.
      */
     private Notice findActiveNotice(Long noticeId) {
@@ -532,6 +556,7 @@ public class NoticeService {
         return NoticeResponse.from(
                 notice,
                 resolveWriterName(notice.getWriterMemberId()),
+                noticeImageService.findActiveImages(notice.getId()),
                 summary.myReactionType(),
                 summary.reactions()
         );

@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS `notification`;
 DROP TABLE IF EXISTS `fcm_token`;
 DROP TABLE IF EXISTS `notice_comment`;
 DROP TABLE IF EXISTS `notice_reaction`;
+DROP TABLE IF EXISTS `notice_image`;
 DROP TABLE IF EXISTS `notice`;
 DROP TABLE IF EXISTS `member_terms_agreement`;
 DROP TABLE IF EXISTS `terms`;
