@@ -24,6 +24,7 @@ import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,7 +82,12 @@ public class WorkerSelectService {
                     request.weekScheduleId()
             );
 
-            workerUnavailableRepository.save(workerUnavailable);
+            // 빈 리스트 저장 - 단건
+            try {
+                workerUnavailableRepository.save(workerUnavailable);
+            } catch (DataIntegrityViolationException e) {
+                throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
+            }
 
             return WorkerSelectResponse.of(
                     workPlace.getId(),
@@ -118,7 +124,12 @@ public class WorkerSelectService {
                 .map(td -> WorkerUnavailable.create(td, member.getId(), workPlace.getId(), request.weekScheduleId()))
                 .toList();
 
-        workerUnavailableRepository.saveAll(toSave);
+        // 일반 저장 - 다건
+        try {
+            workerUnavailableRepository.saveAll(toSave);
+        } catch (DataIntegrityViolationException e) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
+        }
 
         // 6. 응답 반환
         List<WorkerSelectTimeDetailResponse> timeDetailResponses = timeDetails.stream()

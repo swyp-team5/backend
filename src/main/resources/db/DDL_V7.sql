@@ -288,6 +288,46 @@ CREATE INDEX idx_notice_work_place_status_deleted_created_id
 CREATE INDEX idx_notice_work_place_representative_status_deleted
     ON notice (work_place_id, representative, status, deleted_at);
 
+CREATE TABLE notice_image
+(
+    notice_image_id    BIGINT       NOT NULL AUTO_INCREMENT,
+    notice_id          BIGINT NULL,
+    uploader_member_id BIGINT       NOT NULL,
+    original_file_name VARCHAR(255) NOT NULL,
+    stored_file_name   VARCHAR(100) NOT NULL,
+    object_key         VARCHAR(500) NOT NULL,
+    image_url          VARCHAR(700) NOT NULL,
+    content_type       VARCHAR(50)  NOT NULL,
+    file_size          BIGINT       NOT NULL,
+    display_order      INT          NOT NULL DEFAULT 0,
+    status             VARCHAR(20)  NOT NULL,
+    uploaded_at        DATETIME NULL,
+    created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at         DATETIME NULL,
+
+    PRIMARY KEY (notice_image_id),
+
+    CONSTRAINT fk_notice_image_notice
+        FOREIGN KEY (notice_id)
+            REFERENCES notice (notice_id),
+
+    CONSTRAINT uk_notice_image_object_key
+        UNIQUE (object_key),
+
+    CONSTRAINT chk_notice_image_display_order
+        CHECK (display_order BETWEEN 0 AND 5)
+
+)ENGINE=InnoDB
+ DEFAULT CHARSET = utf8mb4
+ COLLATE = utf8mb4_unicode_ci;
+
+CREATE INDEX idx_notice_image_notice_status_deleted_order
+    ON notice_image (notice_id, status, deleted_at, display_order, notice_image_id);
+
+CREATE INDEX idx_notice_image_uploader_object_status
+    ON notice_image (uploader_member_id, object_key, status, deleted_at);
+
 
 CREATE TABLE notice_reaction
 (
@@ -544,10 +584,11 @@ CREATE INDEX `idx_time_detail_day_status_deleted_work_part`
     ON `time_detail` (`day_id`, `status`, `deleted_at`, `work_part_no`);
 
 
+
 CREATE TABLE `worker_unavailable`
 (
     `worker_unavailable_id` BIGINT      NOT NULL AUTO_INCREMENT,
-    `time_detail_id`        BIGINT      NULL,
+    `time_detail_id`        BIGINT NULL,
     `work_place_id`         BIGINT      NOT NULL,
     `week_schedule_id`      BIGINT      NOT NULL,
     `member_id`             BIGINT      NOT NULL,
