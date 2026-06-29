@@ -4140,7 +4140,7 @@ Authorization: Bearer {accessToken}
 | 항목 | 내용 |
 | --- | --- |
 | Method | GET |
-| URL | `/api/work-places/{workPlaceId}/worker-select/status` |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status` |
 | 권한 | OWNER |
 | 설명 | 사업장 근무자들의 제출 여부를 조회한다. |
 
@@ -4148,9 +4148,10 @@ Authorization: Bearer {accessToken}
 
 ### Path Variable
 
-| 필드명 | 타입 | 설명 |
-| --- | --- | --- |
-| workPlaceId | Long | 사업장 ID |
+| 필드명 | 타입 | 설명        |
+| --- | --- |-----------|
+| workPlaceId | Long | 사업장 ID    |
+| weekScheduleId | Long | 주차 스케줄 ID |
 
 ---
 
@@ -4169,6 +4170,7 @@ Authorization: Bearer {accessToken}
 ```json
 {
   "workPlaceId": 1,
+  "weekScheduleId": 2,
   "workers": [
     {
       "memberId": 2,
@@ -4193,13 +4195,14 @@ Authorization: Bearer {accessToken}
 
 #### Response 필드 설명
 
-| 필드명 | 타입 | 설명 |
-| --- | --- | --- |
-| workPlaceId | Long | 사업장 ID |
+| 필드명 | 타입 | 설명         |
+| --- | --- |------------|
+| workPlaceId | Long | 사업장 ID     |
+| weekScheduleId | Long | 주차 스케줄 ID  |
 | workers | List | 사업장 근무자 목록 |
-| memberId | Long | 회원 ID |
-| memberName | String | 회원 이름 |
-| submitted | Boolean | 제출 여부 |
+| memberId | Long | 회원 ID      |
+| memberName | String | 회원 이름      |
+| submitted | Boolean | 제출 여부      |
 
 ---
 
