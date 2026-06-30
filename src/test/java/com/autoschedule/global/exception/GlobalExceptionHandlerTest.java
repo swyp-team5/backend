@@ -87,6 +87,40 @@ class GlobalExceptionHandlerTest {
     }
 
     /**
+     * 요청 본문 JSON 문법이 깨진 경우 400 표준 오류 응답으로 변환되는지 검증한다.
+     */
+    @Test
+    void handlesMalformedJsonBody() throws Exception {
+        mockMvc.perform(post("/test/json-body")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"test\""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4001"))
+                .andExpect(jsonPath("$.message").value("요청 본문 형식이 올바르지 않습니다."))
+                .andExpect(jsonPath("$.errors").isArray())
+                .andExpect(jsonPath("$.path").value("/test/json-body"));
+    }
+
+    /**
+     * 요청 본문 JSON 필드 타입이 DTO 타입과 맞지 않는 경우 400 표준 오류 응답으로 변환되는지 검증한다.
+     */
+    @Test
+    void handlesJsonBodyTypeMismatch() throws Exception {
+        mockMvc.perform(post("/test/number-body")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "count": "abc"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4001"))
+                .andExpect(jsonPath("$.message").value("요청 본문 형식이 올바르지 않습니다."))
+                .andExpect(jsonPath("$.errors").isArray())
+                .andExpect(jsonPath("$.path").value("/test/number-body"));
+    }
+
+    /**
      * 요청 파라미터 검증 실패가 필드 오류를 포함한 400 응답으로 변환되는지 검증한다.
      */
     @Test
@@ -131,6 +165,14 @@ class GlobalExceptionHandlerTest {
         /**
          * 메서드 파라미터 검증 실패 경로를 검증한다.
          */
+        @PostMapping("/json-body")
+        void readJsonBody(@RequestBody TestRequest request) {
+        }
+
+        @PostMapping("/number-body")
+        void readNumberBody(@RequestBody NumberRequest request) {
+        }
+
         @GetMapping("/parameter-validation")
         void validateParameter(@RequestParam("name") @NotBlank(message = "이름은 필수입니다.") String name) {
         }
@@ -149,6 +191,14 @@ class GlobalExceptionHandlerTest {
      */
     record EmptyMessageRequest(
             @NotBlank(message = "") String name
+    ) {
+    }
+
+    /**
+     * JSON 숫자 타입 변환 실패 검증을 위한 테스트 요청 DTO다.
+     */
+    record NumberRequest(
+            Integer count
     ) {
     }
 }

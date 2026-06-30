@@ -8,6 +8,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.util.StringUtils;
@@ -38,6 +39,23 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = exception.getErrorCode();
         ErrorResponse response = ErrorResponse.of(errorCode, exception.getMessage(), request.getRequestURI());
         return ResponseEntity.status(exception.getHttpStatus()).body(response);
+    }
+
+    /**
+     * 요청 본문 JSON 파싱 실패와 DTO 타입 변환 실패를 400 응답으로 변환한다.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(
+            HttpMessageNotReadableException exception,
+            HttpServletRequest request
+    ) {
+        ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
+        ErrorResponse response = ErrorResponse.of(
+                errorCode,
+                "요청 본문 형식이 올바르지 않습니다.",
+                request.getRequestURI()
+        );
+        return ResponseEntity.badRequest().body(response);
     }
 
     /**
