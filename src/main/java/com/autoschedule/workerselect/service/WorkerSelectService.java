@@ -15,14 +15,17 @@ import com.autoschedule.schedulecondition.domain.WeekSchedule;
 import com.autoschedule.schedulecondition.domain.WeekScheduleStatus;
 import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
-import com.autoschedule.workerselect.domain.WorkerUnavailable;
+import com.autoschedule.workerselect.domain.WorkerSelectSubmission;
+import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
 import com.autoschedule.workerselect.domain.WorkerUnavailableStatus;
+import com.autoschedule.workerselect.domain.WorkerUnavailableTimeDetail;
 import com.autoschedule.workerselect.dto.WorkerSelectMemberStatusResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectRequest;
 import com.autoschedule.workerselect.dto.WorkerSelectResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectStatusResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectTimeDetailResponse;
-import com.autoschedule.workerselect.repository.WorkerUnavailableRepository;
+import com.autoschedule.workerselect.repository.WorkerSelectSubmissionRepository;
+import com.autoschedule.workerselect.repository.WorkerUnavailableTimeDetailRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
@@ -31,13 +34,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-/**
- * 근무자 불가능 근무 타임 제출 기능을 처리한다.
- */
 @Service
 @RequiredArgsConstructor
 public class WorkerSelectService {
@@ -46,8 +44,9 @@ public class WorkerSelectService {
     private final WorkPlaceRepository workPlaceRepository;
     private final CrewRepository crewRepository;
     private final TimeDetailRepository timeDetailRepository;
-    private final WorkerUnavailableRepository workerUnavailableRepository;
     private final WeekScheduleRepository weekScheduleRepository;
+    private final WorkerSelectSubmissionRepository workerSelectSubmissionRepository;
+    private final WorkerUnavailableTimeDetailRepository workerUnavailableTimeDetailRepository;
 
     /**
      * 근무자가 선택한 불가능 근무 타임을 저장한다.
@@ -60,51 +59,38 @@ public class WorkerSelectService {
     ) {
         // 1. 회원 및 사업장 검증
         Member member = findActiveMember(memberId);
-
         WorkPlace workPlace = findActiveWorkPlace(workPlaceId);
-
-        validateCrewMember(
-                workPlace.getId(),
-                member.getId()
-        );
+        validateCrewMember(workPlace.getId(), member.getId());
 
         // 2. 중복 제출 검증
-        // 근무자가 이미 불가능한 일자를 제출했는지 검증. -> 이미 한번 제출하면 재 제출은 불가하다.
         validateAlreadySubmitted(member.getId(), workPlace.getId(), request.weekScheduleId());
 
-        List<Long> timeDetailIds = request.timeDetails(); // 중복이 포함된 원본 timeDetails
+        List<Long> timeDetailIds = request.timeDetails() == null ? List.of() : request.timeDetails(); // null 이면 빈 리스트로 정규화
         List<Long> uniqueTimeDetailIds = timeDetailIds.stream()
                 .distinct()
-                .toList(); // 중복 제거된 timeDetails
+                .toList();
 
-        // 3. 빈 리스트 처리
-        if (timeDetailIds.isEmpty()) {
-            WorkerUnavailable workerUnavailable = WorkerUnavailable.create(
-                    null,
-                    member.getId(),
-                    workPlace.getId(),
-                    request.weekScheduleId()
+        // [변경] 빈 리스트 분기 제거 — submission을 항상 먼저 저장하고, timeDetail이 있을 때만 추가 저장
+        // 3. 제출 현황(submission) 저장 — 빈 리스트든 아니든 항상 단건 저장
+        WorkerSelectSubmission submission;
+        try {
+            submission = workerSelectSubmissionRepository.save(
+                    WorkerSelectSubmission.create(workPlace.getId(), request.weekScheduleId(), member.getId())
             );
-
-            // 빈 리스트 저장 - 단건
-            try {
-                workerUnavailableRepository.save(workerUnavailable);
-            } catch (DataIntegrityViolationException e) {
-                throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
-            }
-
-            return WorkerSelectResponse.of(
-                    workPlace.getId(),
-                    member.getId(),
-                    List.of()
-            );
+        } catch (DataIntegrityViolationException e) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
         }
 
-        // 4. 요청값에서 가져온 중복이 제거된 time_deatil_id값들이 사업장에 존재하는 값인지 조회한다.
+        // 4. 빈 리스트면 submission만 저장하고 종료 (time_detail 레코드 생성 없음)
+        if (uniqueTimeDetailIds.isEmpty()) {
+            return WorkerSelectResponse.of(workPlace.getId(), member.getId(), List.of());
+        }
+
+        // 5. timeDetailId 유효성 검증 — 해당 사업장 + 주간 스케줄에 속한 값인지 확인
         List<TimeDetail> timeDetails = timeDetailRepository
                 .findAllByIdInAndDay_WeekSchedule_IdAndDay_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
                         uniqueTimeDetailIds,
-                        request.weekScheduleId(),   // 추가: 현재 제출 대상 주간 스케줄
+                        request.weekScheduleId(),
                         workPlace.getId(),
                         TimeDetailStatus.ACTIVE
                 );
@@ -113,38 +99,20 @@ public class WorkerSelectService {
             throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다.");
         }
 
-        // 5. 중복 저장 방지 후 일괄 저장
-        Set<Long> alreadySubmittedIds = new HashSet<>(
-                workerUnavailableRepository
-                        .findTimeDetailIdsByMemberIdAndTimeDetail_IdInAndStatusAndDeletedAtIsNull(
-                                member.getId(),
-                                timeDetailIds,
-                                WorkerUnavailableStatus.ACTIVE
-                        )
-        );
-
-        List<WorkerUnavailable> toSave = timeDetails.stream()
-                .filter(td -> !alreadySubmittedIds.contains(td.getId()))
-                .map(td -> WorkerUnavailable.create(td, member.getId(), workPlace.getId(), request.weekScheduleId()))
+        // [변경] WorkerUnavailable 대신 WorkerUnavailableTimeDetail로 저장
+        // 6. 불가 타임 목록 저장
+        List<WorkerUnavailableTimeDetail> toSave = timeDetails.stream()
+                .map(td -> WorkerUnavailableTimeDetail.create(submission, td))
                 .toList();
 
-        // 일반 저장 - 다건
-        try {
-            workerUnavailableRepository.saveAll(toSave);
-        } catch (DataIntegrityViolationException e) {
-            throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
-        }
+        workerUnavailableTimeDetailRepository.saveAll(toSave);
 
-        // 6. 응답 반환
+        // 7. 응답 반환
         List<WorkerSelectTimeDetailResponse> timeDetailResponses = timeDetails.stream()
                 .map(WorkerSelectTimeDetailResponse::from)
                 .toList();
 
-        return WorkerSelectResponse.of(
-                workPlace.getId(),
-                member.getId(),
-                timeDetailResponses
-        );
+        return WorkerSelectResponse.of(workPlace.getId(), member.getId(), timeDetailResponses);
     }
 
     /**
@@ -157,9 +125,9 @@ public class WorkerSelectService {
             Long weekScheduleId
     ) {
         // 1. 사장 및 사업장 검증
-        Member owner = findActiveMember(ownerMemberId); // 현재 로그인한 사장 회원을 조회함
-        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId()); // 사업장 존재 + 사장 권한 확인
-        WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId()); // 사업장 + 주차 스케줄 조건 검증
+        Member owner = findActiveMember(ownerMemberId);
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
+        WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
 
         // 2. 사업장의 근무자 크루 목록 조회
         List<Crew> crews = crewRepository.findByWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
@@ -169,47 +137,40 @@ public class WorkerSelectService {
                 CrewStatus.ACTIVE
         );
 
-        // 3. 제출 완료한 멤버 ID 목록 조회
         List<Long> crewMemberIds = crews.stream()
                 .map(crew -> crew.getMember().getId())
                 .toList();
 
-        List<Long> submittedMemberIds = workerUnavailableRepository
-                .findByMemberIdInAndWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
-                        crewMemberIds,
+        // 3. 제출 현황 테이블에서 제출 완료한 멤버 ID 목록 조회
+        List<Long> submittedMemberIds = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
                         workPlace.getId(),
                         weekSchedule.getId(),
-                        WorkerUnavailableStatus.ACTIVE
+                        crewMemberIds,
+                        WorkerSelectSubmissionStatus.ACTIVE
                 )
                 .stream()
-                .map(WorkerUnavailable::getMemberId)
+                .map(WorkerSelectSubmission::getMemberId)
                 .toList();
 
         // 4. 제출 여부 포함 응답 생성
         List<WorkerSelectMemberStatusResponse> workers = crews.stream()
-                .map(crew -> WorkerSelectMemberStatusResponse.from(
-                        crew,
-                        submittedMemberIds
-                ))
+                .map(crew -> WorkerSelectMemberStatusResponse.from(crew, submittedMemberIds))
                 .toList();
 
-        return WorkerSelectStatusResponse.of(
-                workPlace.getId(),
-                weekSchedule.getId(),
-                workers
-        );
+        return WorkerSelectStatusResponse.of(workPlace.getId(), weekSchedule.getId(), workers);
     }
 
     /**
      * 이미 근무 불가 정보를 제출했는지 확인한다.
      */
     private void validateAlreadySubmitted(Long memberId, Long workPlaceId, Long weekScheduleId) {
-        boolean exists = workerUnavailableRepository
-                .existsByMemberIdAndWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
-                        memberId,
+        boolean exists = workerSelectSubmissionRepository
+                .existsByWorkPlaceIdAndWeekScheduleIdAndMemberIdAndStatusAndDeletedAtIsNull(
                         workPlaceId,
                         weekScheduleId,
-                        WorkerUnavailableStatus.ACTIVE
+                        memberId,
+                        WorkerSelectSubmissionStatus.ACTIVE
                 );
 
         if (exists) {
@@ -217,17 +178,11 @@ public class WorkerSelectService {
         }
     }
 
-    /**
-     * 활성화된 멤버인지 검증하는 메서드
-     */
     private Member findActiveMember(Long memberId) {
         return memberRepository.findActiveById(memberId)
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "인증 정보가 올바르지 않습니다."));
     }
 
-    /**
-     * 사업장 존재 여부를 먼저 확인한 뒤 소유자를 검증한다.
-     */
     private WorkPlace findOwnedActiveWorkPlace(Long workPlaceId, Long ownerMemberId) {
         WorkPlace workPlace = workPlaceRepository
                 .findByIdAndStatusAndDeletedAtIsNull(workPlaceId, WorkPlaceStatus.ACTIVE)
@@ -240,9 +195,6 @@ public class WorkerSelectService {
         return workPlace;
     }
 
-    /**
-     * 특정 사업장에 해당 주차의 스케줄 조건이 있는지 검증한다.
-     */
     private WeekSchedule findActiveWeekSchedule(Long weekScheduleId, Long workPlaceId) {
         return weekScheduleRepository.findByIdAndWorkPlaceIdAndStatusAndDeletedAtIsNull(
                         weekScheduleId,
@@ -252,13 +204,7 @@ public class WorkerSelectService {
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주차의 스케줄 조건을 찾을 수 없습니다."));
     }
 
-    /**
-     * 로그인 회원이 해당 사업장의 크루원인지 확인한다.
-     */
-    private void validateCrewMember(
-            Long workPlaceId,
-            Long memberId
-    ) {
+    private void validateCrewMember(Long workPlaceId, Long memberId) {
         boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
                 memberId,
                 workPlaceId,
@@ -272,14 +218,9 @@ public class WorkerSelectService {
         }
     }
 
-    /**
-     * 사업장 존재 여부를 먼저 확인한 뒤 소유자를 검증한다.
-     */
     private WorkPlace findActiveWorkPlace(Long workPlaceId) {
-        WorkPlace workPlace = workPlaceRepository
+        return workPlaceRepository
                 .findByIdAndStatusAndDeletedAtIsNull(workPlaceId, WorkPlaceStatus.ACTIVE)
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "사업장을 찾을 수 없습니다."));
-
-        return workPlace;
     }
 }

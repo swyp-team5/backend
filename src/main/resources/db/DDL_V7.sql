@@ -583,27 +583,43 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE INDEX `idx_time_detail_day_status_deleted_work_part`
     ON `time_detail` (`day_id`, `status`, `deleted_at`, `work_part_no`);
 
-
-
-CREATE TABLE `worker_unavailable`
+CREATE TABLE `worker_select_submission`
 (
-    `worker_unavailable_id` BIGINT      NOT NULL AUTO_INCREMENT,
-    `time_detail_id`        BIGINT NULL,
-    `work_place_id`         BIGINT      NOT NULL,
-    `week_schedule_id`      BIGINT      NOT NULL,
-    `member_id`             BIGINT      NOT NULL,
-    `status`                VARCHAR(20) NOT NULL,
-    `created_at`            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `deleted_at`            DATETIME NULL,
+    `worker_select_submission_id` BIGINT      NOT NULL AUTO_INCREMENT,
+    `work_place_id`              BIGINT      NOT NULL,
+    `week_schedule_id`            BIGINT      NOT NULL,
+    `member_id`                   BIGINT      NOT NULL,
+    `status`                      VARCHAR(20) NOT NULL,
+    `created_at`                  DATETIME    NOT NULL,
+    `updated_at`                  DATETIME    NOT NULL,
+    `deleted_at`                  DATETIME NULL,
 
-    PRIMARY KEY (`worker_unavailable_id`),
+    PRIMARY KEY (`worker_select_submission_id`),
 
-    CONSTRAINT `fk_worker_unavailable_time_detail`
-        FOREIGN KEY (`time_detail_id`) REFERENCES `time_detail` (`time_detail_id`),
+    CONSTRAINT `uk_submission_place_schedule_member`
+        UNIQUE (`work_place_id`, `week_schedule_id`, `member_id`)
+)   ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
 
-    CONSTRAINT `uk_worker_unavailable_time_detail_member`
-        UNIQUE (`time_detail_id`, `member_id`)
-) ENGINE=InnoDB
+CREATE TABLE `worker_unavailable_time_detail`
+(
+    `worker_unavailable_time_detail_id` BIGINT      NOT NULL AUTO_INCREMENT,
+    `worker_select_submission_id`       BIGINT      NOT NULL,
+    `time_detail_id`                    BIGINT      NOT NULL,
+    `status`                            VARCHAR(20) NOT NULL,
+    `created_at`                        DATETIME    NOT NULL,
+    `updated_at`                        DATETIME    NOT NULL,
+    `deleted_at`                        DATETIME NULL,
+
+    PRIMARY KEY (`worker_unavailable_time_detail_id`),
+
+    CONSTRAINT `fk_worker_unavailable_time_detail_submission`
+        FOREIGN KEY (`worker_select_submission_id`)
+            REFERENCES `worker_select_submission` (`worker_select_submission_id`),
+
+    CONSTRAINT `fk_worker_unavailable_time_detail_td`
+        FOREIGN KEY (`time_detail_id`) REFERENCES `time_detail` (`time_detail_id`)
+)   ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
