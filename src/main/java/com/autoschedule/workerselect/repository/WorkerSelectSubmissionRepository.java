@@ -2,7 +2,6 @@ package com.autoschedule.workerselect.repository;
 
 import com.autoschedule.workerselect.domain.WorkerSelectSubmission;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
-import com.autoschedule.workerselect.domain.WorkerUnavailableStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

@@ -17,7 +17,6 @@ import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmission;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
-import com.autoschedule.workerselect.domain.WorkerUnavailableStatus;
 import com.autoschedule.workerselect.domain.WorkerUnavailableTimeDetail;
 import com.autoschedule.workerselect.dto.WorkerSelectMemberStatusResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectRequest;

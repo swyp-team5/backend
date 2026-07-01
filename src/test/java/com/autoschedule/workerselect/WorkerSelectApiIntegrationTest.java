@@ -20,12 +20,14 @@ import com.autoschedule.schedulecondition.domain.WeekSchedule;
 import com.autoschedule.schedulecondition.repository.DayRepository;
 import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
+import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
-import com.autoschedule.workerselect.domain.WorkerUnavailable;
-import com.autoschedule.workerselect.domain.WorkerUnavailableStatus;
-import com.autoschedule.workerselect.repository.WorkerUnavailableRepository;
+import com.autoschedule.workerselect.domain.WorkerSelectSubmission;
+import com.autoschedule.workerselect.domain.WorkerUnavailableTimeDetail;
+import com.autoschedule.workerselect.repository.WorkerSelectSubmissionRepository;
+import com.autoschedule.workerselect.repository.WorkerUnavailableTimeDetailRepository;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -77,7 +79,10 @@ class WorkerSelectApiIntegrationTest {
     private TimeDetailRepository timeDetailRepository;
 
     @Autowired
-    private WorkerUnavailableRepository workerUnavailableRepository;
+    private WorkerSelectSubmissionRepository workerSelectSubmissionRepository;
+
+    @Autowired
+    private WorkerUnavailableTimeDetailRepository workerUnavailableTimeDetailRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -191,7 +196,7 @@ class WorkerSelectApiIntegrationTest {
     }
 
     /**
-     * 제출 후 worker_unavailable 테이블에 memberId와 timeDetailId가 정상 저장된다.
+     * 제출 후 worker_select_submission에 제출 현황이, worker_unavailable_time_detail에 타임 정보가 저장된다.
      */
     @Test
     void selectWorkerUnavailable_storedInDatabase() throws Exception {
@@ -201,16 +206,26 @@ class WorkerSelectApiIntegrationTest {
                         .content(buildRequestWithTimeDetails(List.of(timeDetail.getId()))))
                 .andExpect(status().isCreated());
 
-        List<WorkerUnavailable> saved = workerUnavailableRepository
-                .findByMemberIdAndStatusAndDeletedAtIsNull(worker.getId(), WorkerUnavailableStatus.ACTIVE);
+        // submission 저장 검증
+        List<WorkerSelectSubmission> submissions = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(),
+                        weekSchedule.getId(),
+                        List.of(worker.getId()),
+                        WorkerSelectSubmissionStatus.ACTIVE
+                );
+        assertThat(submissions).hasSize(1);
+        assertThat(submissions.get(0).getMemberId()).isEqualTo(worker.getId());
 
-        assertThat(saved).hasSize(1);
-        assertThat(saved.get(0).getMemberId()).isEqualTo(worker.getId());
-        assertThat(saved.get(0).getTimeDetail().getId()).isEqualTo(timeDetail.getId());
+        // time_detail 저장 검증
+        List<WorkerUnavailableTimeDetail> timeDetails =
+                workerUnavailableTimeDetailRepository.findBySubmission_Id(submissions.get(0).getId());
+        assertThat(timeDetails).hasSize(1);
+        assertThat(timeDetails.get(0).getTimeDetail().getId()).isEqualTo(timeDetail.getId());
     }
 
     /**
-     * 빈 목록 제출 후 worker_unavailable 테이블에 timeDetailId=null인 레코드가 저장된다.
+     * 빈 목록 제출 후 worker_select_submission에는 저장되고 worker_unavailable_time_detail에는 저장되지 않는다.
      */
     @Test
     void selectWorkerUnavailable_emptySubmitStoredInDatabase() throws Exception {
@@ -220,12 +235,20 @@ class WorkerSelectApiIntegrationTest {
                         .content(buildRequestWithTimeDetails(List.of())))
                 .andExpect(status().isCreated());
 
-        List<WorkerUnavailable> saved = workerUnavailableRepository
-                .findByMemberIdAndStatusAndDeletedAtIsNull(worker.getId(), WorkerUnavailableStatus.ACTIVE);
+        // submission은 저장됨
+        List<WorkerSelectSubmission> submissions = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(),
+                        weekSchedule.getId(),
+                        List.of(worker.getId()),
+                        WorkerSelectSubmissionStatus.ACTIVE
+                );
+        assertThat(submissions).hasSize(1);
 
-        assertThat(saved).hasSize(1);
-        assertThat(saved.get(0).getMemberId()).isEqualTo(worker.getId());
-        assertThat(saved.get(0).getTimeDetail()).isNull();
+        // time_detail은 저장되지 않음
+        List<WorkerUnavailableTimeDetail> timeDetails =
+                workerUnavailableTimeDetailRepository.findBySubmission_Id(submissions.get(0).getId());
+        assertThat(timeDetails).isEmpty();
     }
 
     /**
@@ -366,17 +389,21 @@ class WorkerSelectApiIntegrationTest {
     }
 
     /**
-     * timeDetails가 null이면 400을 반환한다.
+     * timeDetails가 null이면 빈 리스트로 정규화되어 201을 반환하고 timeDetails는 빈 배열이다.
      */
     @Test
-    void selectWorkerUnavailable_failsWhenTimeDetailsIsNull() throws Exception {
+    void selectWorkerUnavailable_successWhenTimeDetailsIsNull() throws Exception {
         mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                { "weekScheduleId": 1, "timeDetails": null }
-                                """))
-                .andExpect(status().isBadRequest());
+                                { "weekScheduleId": %d, "timeDetails": null }
+                                """.formatted(weekSchedule.getId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.memberId").value(worker.getId()))
+                .andExpect(jsonPath("$.timeDetails").isArray())
+                .andExpect(jsonPath("$.timeDetails.length()").value(0));
     }
 
     /**
@@ -426,10 +453,17 @@ class WorkerSelectApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.timeDetails.length()").value(1));
 
-        List<WorkerUnavailable> saved = workerUnavailableRepository
-                .findByMemberIdAndStatusAndDeletedAtIsNull(worker.getId(), WorkerUnavailableStatus.ACTIVE);
+        List<WorkerSelectSubmission> submissions = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(),
+                        weekSchedule.getId(),
+                        List.of(worker.getId()),
+                        WorkerSelectSubmissionStatus.ACTIVE
+                );
+        List<WorkerUnavailableTimeDetail> timeDetails =
+                workerUnavailableTimeDetailRepository.findBySubmission_Id(submissions.get(0).getId());
 
-        assertThat(saved).hasSize(1);
+        assertThat(timeDetails).hasSize(1);
     }
 
     /**
@@ -533,6 +567,41 @@ class WorkerSelectApiIntegrationTest {
         assertThat(statuses).containsExactlyInAnyOrder(201, 400);
     }
 
+    /**
+     * 같은 사업장이라도 다른 주간 스케줄에는 별도 제출이 가능하다.
+     */
+    @Test
+    void selectWorkerUnavailable_successForDifferentWeekSchedule() throws Exception {
+        // 첫 번째 주차 제출
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithTimeDetails(List.of(timeDetail.getId()))))
+                .andExpect(status().isCreated());
+
+        // 두 번째 주차 생성
+        WeekSchedule anotherWeekSchedule = weekScheduleRepository.save(WeekSchedule.create(
+                workPlace,
+                "2025년 7월 2주차",
+                LocalDate.now().plusDays(10),
+                LocalTime.of(9, 0),
+                LocalTime.of(22, 0),
+                1,
+                5
+        ));
+
+        // 두 번째 주차로 요청 — 201이어야 함
+        String requestJson = """
+                { "weekScheduleId": %d, "timeDetails": [] }
+                """.formatted(anotherWeekSchedule.getId());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isCreated());
+    }
+
     // ─────────────────────────────────────────────
     // 헬퍼 메서드
     // ─────────────────────────────────────────────
@@ -562,7 +631,8 @@ class WorkerSelectApiIntegrationTest {
      * 테스트 격리를 위해 관련 테이블을 참조 순서에 맞게 삭제한다.
      */
     private void cleanupDatabase() {
-        jdbcTemplate.update("delete from worker_unavailable");
+        jdbcTemplate.update("delete from worker_unavailable_time_detail");
+        jdbcTemplate.update("delete from worker_select_submission");
         jdbcTemplate.update("delete from time_detail");
         jdbcTemplate.update("delete from day");
         jdbcTemplate.update("delete from crew");

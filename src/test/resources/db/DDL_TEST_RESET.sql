@@ -1,4 +1,5 @@
-DROP TABLE IF EXISTS `worker_unavailable`;
+DROP TABLE IF EXISTS `worker_unavailable_time_detail`;
+DROP TABLE IF EXISTS `worker_select_submission`;
 DROP TABLE IF EXISTS `time_detail`;
 DROP TABLE IF EXISTS `day`;
 DROP TABLE IF EXISTS `week_schedule`;
