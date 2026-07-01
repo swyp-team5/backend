@@ -92,4 +92,12 @@ public class Crew extends BaseEntity {
         this.deletedAt = null;
     }
 
+    /**
+     * 사업장에서 근무자 크루를 비활성 처리한다.
+     */
+    public void deactivate(LocalDateTime deletedAt) {
+        this.status = CrewStatus.INACTIVE;
+        this.deletedAt = deletedAt;
+    }
+
 }

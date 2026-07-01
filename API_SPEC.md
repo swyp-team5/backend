@@ -1307,6 +1307,156 @@ Authorization: Bearer {OWNER_ACCESS_TOKEN}
 | 403 | 4003 | OWNER 권한이 아님 |
 | 404 | 4004 | 조회할 수 있는 사업장을 찾을 수 없음 |
 
+### 7.4 사업장 근무자 목록 조회
+
+사장님 또는 근무자가 자신이 접근 가능한 사업장의 근무자 크루 목록을 조회한다.
+
+```http
+GET /api/work-places/{workPlaceId}/crews
+```
+
+#### 인증
+
+```http
+Authorization: Bearer {ACCESS_TOKEN}
+```
+
+`OWNER`, `WORKER` 모두 호출할 수 있다.
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 근무자 목록을 조회할 사업장 ID |
+
+#### 사장님 성공 응답
+
+사장님은 본인이 소유한 활성 사업장의 근무자 개인정보를 조회할 수 있다.
+
+```http
+200 OK
+```
+
+```json
+{
+  "crews": [
+    {
+      "crewId": 20,
+      "memberId": 7,
+      "name": "이세령",
+      "phoneNumber": "01012345678",
+      "profileImageUrl": "https://static.example.com/profile-images/7/profile.png",
+      "crewRole": "WORKER",
+      "joinStatus": "APPROVED",
+      "crewStatus": "ACTIVE",
+      "createdAt": "2026-07-01T10:00:00"
+    }
+  ]
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| crews[].crewId | number | 사업장 크루 ID |
+| crews[].memberId | number | 근무자 회원 ID |
+| crews[].name | string | 근무자 이름 |
+| crews[].phoneNumber | string | 근무자 휴대폰 번호 |
+| crews[].profileImageUrl | string/null | 근무자 프로필 이미지 URL. 없으면 `null` |
+| crews[].crewRole | string | 현재 `WORKER` |
+| crews[].joinStatus | string | 현재 응답에는 `APPROVED`만 포함 |
+| crews[].crewStatus | string | 현재 응답에는 `ACTIVE`만 포함 |
+| crews[].createdAt | string | 크루 등록 시각 |
+
+#### 근무자 성공 응답
+
+근무자는 같은 사업장 근무자의 이름과 프로필 이미지만 조회할 수 있다. 휴대폰 번호, 가입 상태, 크루 상태 등 개인정보성/관리성 필드는 내려주지 않는다.
+
+```http
+200 OK
+```
+
+```json
+{
+  "crews": [
+    {
+      "crewId": 20,
+      "memberId": 7,
+      "name": "이세령",
+      "profileImageUrl": "https://static.example.com/profile-images/7/profile.png"
+    }
+  ]
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| crews[].crewId | number | 사업장 크루 ID |
+| crews[].memberId | number | 근무자 회원 ID |
+| crews[].name | string | 근무자 이름 |
+| crews[].profileImageUrl | string/null | 근무자 프로필 이미지 URL. 없으면 `null` |
+
+#### 주요 비즈니스 규칙
+
+- 목록에는 `APPROVED / WORKER / ACTIVE` 상태이고 `deleted_at is null`인 크루만 포함한다.
+- 사장님은 본인이 소유한 활성 사업장의 근무자 목록만 조회할 수 있다.
+- 근무자는 본인이 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장의 근무자 목록만 조회할 수 있다.
+- OWNER 크루는 근무자 목록에 포함하지 않는다.
+- 백엔드는 `crew`와 `member`를 fetch join으로 조회하고, 활성 프로필 이미지는 `memberId IN (...)`으로 한 번에 조회해 N+1 쿼리를 방지한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | 근무자가 해당 사업장에 소속되어 있지 않음 |
+| 404 | 4004 | 사업장이 없거나 사장님이 소유한 사업장이 아님 |
+
+### 7.5 사업장 근무자 삭제
+
+사장님이 본인 사업장의 근무자 크루를 비활성 처리한다.
+
+```http
+DELETE /api/work-places/{workPlaceId}/crews/{crewId}
+```
+
+#### 인증
+
+```http
+Authorization: Bearer {OWNER_ACCESS_TOKEN}
+```
+
+`OWNER` 권한 회원만 호출할 수 있다.
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 근무자를 삭제할 사업장 ID |
+| crewId | number | Y | 삭제할 근무자 크루 ID |
+
+#### 성공 응답
+
+```http
+204 No Content
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 근무자 크루를 삭제할 수 있다.
+- 사장님 본인이 소유한 활성 사업장의 근무자만 삭제할 수 있다.
+- 삭제 대상은 `WORKER` 크루만 가능하다. OWNER 크루는 이 API로 삭제할 수 없다.
+- 물리 삭제하지 않고 `crew.status = INACTIVE`, `crew.deleted_at = 삭제 시각`으로 비활성 처리한다.
+- 비활성 처리된 근무자는 사업장 근무자 목록과 내 사업장 목록에서 제외된다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4001 | OWNER 크루 삭제 시도 등 잘못된 요청 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+| 404 | 4004 | 사업장 또는 활성 근무자 크루를 찾을 수 없음 |
+
 ## 8. 공지사항 API
 
 공지사항은 사업장 단위 게시글이다. 사장님은 본인 소유 사업장의 공지를 작성, 수정, 삭제할 수 있고 근무자는 본인이 소속된 사업장의 공지만 조회할 수 있다.
@@ -2537,11 +2687,14 @@ deleted_at is null
 
 ```text
 idx_crew_member_join_status_status_deleted_work_place (member_id, join_status, status, deleted_at, work_place_id)
+idx_crew_work_place_role_join_status_status_deleted (work_place_id, crew_role, join_status, status, deleted_at, crew_id)
 ```
 
 - `GET /api/work-places/me` 조회에서 사용한다.
+- `GET /api/work-places/{workPlaceId}/crews` 조회에서 사용한다.
 - `work_place`는 PK인 `work_place_id`로 조인한다.
 - 백엔드는 `crew`와 `work_place`를 fetch join으로 조회하여 매장 목록 응답 생성 시 N+1 쿼리를 방지한다.
+- 사업장 근무자 목록은 `crew`와 `member`를 fetch join하고 프로필 이미지를 `memberId IN (...)`으로 분리 조회해 N+1 쿼리를 방지한다.
 
 ## 11. 공지사항 DB 정책
 

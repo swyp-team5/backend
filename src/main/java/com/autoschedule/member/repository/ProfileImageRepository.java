@@ -2,6 +2,8 @@ package com.autoschedule.member.repository;
 
 import com.autoschedule.member.domain.ProfileImage;
 import com.autoschedule.member.domain.ProfileImageStatus;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -21,6 +23,14 @@ public interface ProfileImageRepository extends JpaRepository<ProfileImage, Long
     Optional<ProfileImage> findByMember_IdAndObjectKeyAndStatusAndDeletedAtIsNull(
             Long memberId,
             String objectKey,
+            ProfileImageStatus status
+    );
+
+    /**
+     * 회원 ID 목록에 포함된 현재 유효한 프로필 이미지를 한 번에 조회한다.
+     */
+    List<ProfileImage> findByMember_IdInAndStatusAndDeletedAtIsNull(
+            Collection<Long> memberIds,
             ProfileImageStatus status
     );
 }
