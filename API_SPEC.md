@@ -4363,9 +4363,9 @@ HTTP/1.1 404 Not Found
 
 근무자가 자신이 근무할 수 없는 날짜 및 타임을 선택하여 제출한다.
 
-선택한 타임 정보는 `worker_unavailable` 테이블에 저장된다.
+제출 현황은 `worker_select_submission` 테이블에 저장되고, 선택한 타임 정보는 `worker_unavailable_time_detail` 테이블에 저장된다.
 
-선택한 값이 없는 경우에는 `time_detail_id = null`로 저장한다.
+선택한 값이 없는 경우에는 `worker_select_submission`에만 저장되고 `worker_unavailable_time_detail`에는 저장되지 않는다.
 
 제출이 완료되면 재제출은 불가하다.
 
@@ -4402,6 +4402,7 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
+  "weekScheduleId": 1,
   "timeDetails": [
     1,
     2,
@@ -4414,9 +4415,10 @@ Authorization: Bearer {accessToken}
 
 ### HTTP Body 필드 설명
 
-| 필드명 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| timeDetails | List | O | 선택한 근무 불가 타임 ID 목록 |
+| 필드명 | 타입   | 필수 | 설명                           |
+| --- |------| --- |------------------------------|
+| weekScheduleId | Long | O | 선택한 근무 불가 타임 ID 목록의 주차스케줄 ID |
+| timeDetails | List | X | 선택한 근무 불가 타임 ID 목록 (null이면 빈 리스트로 처리)           |
 
 ---
 
@@ -4424,6 +4426,7 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
+  "weekScheduleId": 1,
   "timeDetails": []
 }
 ```
@@ -4528,7 +4531,7 @@ Authorization: Bearer {accessToken}
 
 - 해당 사업장의 활성 크루 목록 조회
 - crew_role이 WORKER인 멤버들 전부조회
-- 크루의 memberId가 worker_unavailable 테이블에 존재하면 제출 완료
+- 크루의 memberId가 worker_select_submission 테이블에 존재하면 제출 완료
 - 존재하지 않으면 미제출
 
 ---
@@ -4538,7 +4541,7 @@ Authorization: Bearer {accessToken}
 | 항목 | 내용 |
 | --- | --- |
 | Method | GET |
-| URL | `/api/work-places/{workPlaceId}/worker-select/status` |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/status` |
 | 권한 | OWNER |
 | 설명 | 사업장 근무자들의 제출 여부를 조회한다. |
 
@@ -4546,9 +4549,10 @@ Authorization: Bearer {accessToken}
 
 ### Path Variable
 
-| 필드명 | 타입 | 설명 |
-| --- | --- | --- |
-| workPlaceId | Long | 사업장 ID |
+| 필드명 | 타입 | 설명        |
+| --- | --- |-----------|
+| workPlaceId | Long | 사업장 ID    |
+| weekScheduleId | Long | 주차 스케줄 ID |
 
 ---
 
@@ -4567,6 +4571,7 @@ Authorization: Bearer {accessToken}
 ```json
 {
   "workPlaceId": 1,
+  "weekScheduleId": 2,
   "workers": [
     {
       "memberId": 2,
@@ -4591,13 +4596,14 @@ Authorization: Bearer {accessToken}
 
 #### Response 필드 설명
 
-| 필드명 | 타입 | 설명 |
-| --- | --- | --- |
-| workPlaceId | Long | 사업장 ID |
+| 필드명 | 타입 | 설명         |
+| --- | --- |------------|
+| workPlaceId | Long | 사업장 ID     |
+| weekScheduleId | Long | 주차 스케줄 ID  |
 | workers | List | 사업장 근무자 목록 |
-| memberId | Long | 회원 ID |
-| memberName | String | 회원 이름 |
-| submitted | Boolean | 제출 여부 |
+| memberId | Long | 회원 ID      |
+| memberName | String | 회원 이름      |
+| submitted | Boolean | 제출 여부      |
 
 ---
 
@@ -4605,17 +4611,19 @@ Authorization: Bearer {accessToken}
 
 | 값 | 설명 |
 | --- | --- |
-| true | worker_unavailable 테이블에 ACTIVE 상태 데이터 존재 → 제출함 |
-| false | worker_unavailable 테이블에 데이터 없음 → 제출 안함 |
+| true | worker_select_submission 테이블에 ACTIVE 상태 데이터 존재 → 제출함 |
+| false | worker_select_submission 테이블에 데이터 없음 → 제출 안함 |
 
 ---
 
 ### 주요 에러
 
 | HTTP Status | 메시지 |
-| --- | --- |
-| 401 | 인증 정보가 올바르지 않습니다. |
-| 403 | 이 회원은 해당 사업장의 크루원이 아닙니다. |
+|-------------| --- |
+| 401         | 인증 정보가 올바르지 않습니다. |
+| 403         | 권한이 없습니다. |
+| 404         | 사업장을 찾을 수 없습니다. |
+| 404         | 해당 주차의 스케줄 조건을 찾을 수 없습니다.|
 
 ---
 
@@ -4625,6 +4633,6 @@ Authorization: Bearer {accessToken}
 {
   "success": false,
   "code": "FORBIDDEN",
-  "message": "이 회원은 해당 사업장의 크루원이 아닙니다."
+  "message": "권한이 없습니다."
 }
 ```
