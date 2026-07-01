@@ -10,16 +10,16 @@ CREATE TABLE member
     status          VARCHAR(20)  NOT NULL,
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at      DATETIME NULL,
+    deleted_at      DATETIME     NULL,
 
     PRIMARY KEY (member_id),
 
     CONSTRAINT uk_member_social_provider_subject
         UNIQUE (social_provider, social_subject)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE member_notification_setting
 (
@@ -41,9 +41,9 @@ CREATE TABLE member_notification_setting
     CONSTRAINT chk_member_notification_setting_fcm_push_enabled
         CHECK (fcm_push_enabled IN (0, 1))
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_member_notification_setting_member_id
     ON member_notification_setting (member_id);
@@ -56,16 +56,17 @@ CREATE TABLE work_place
     name            VARCHAR(100) NOT NULL,
     road_address    VARCHAR(255) NOT NULL,
     detail_address  VARCHAR(100) NULL,
+    phone_number    VARCHAR(20)  NULL,
     status          VARCHAR(20)  NOT NULL,
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at      DATETIME NULL,
+    deleted_at      DATETIME     NULL,
 
     PRIMARY KEY (work_place_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE profile_image
 (
@@ -78,10 +79,10 @@ CREATE TABLE profile_image
     content_type       VARCHAR(50)  NOT NULL,
     file_size          BIGINT       NOT NULL,
     status             VARCHAR(20)  NOT NULL,
-    uploaded_at        DATETIME NULL,
+    uploaded_at        DATETIME     NULL,
     created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at         DATETIME NULL,
+    deleted_at         DATETIME     NULL,
     active_member_id   BIGINT
         GENERATED ALWAYS AS (
             CASE
@@ -112,9 +113,9 @@ CREATE TABLE profile_image
     CONSTRAINT uk_profile_image_pending_member
         UNIQUE (pending_member_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_profile_image_member_status_deleted
     ON profile_image (member_id, status, deleted_at);
@@ -134,7 +135,7 @@ CREATE TABLE crew
     status        VARCHAR(20) NOT NULL,
     created_at    DATETIME    NOT NULL,
     updated_at    DATETIME    NOT NULL,
-    deleted_at    DATETIME NULL,
+    deleted_at    DATETIME    NULL,
 
     PRIMARY KEY (crew_id),
 
@@ -149,9 +150,9 @@ CREATE TABLE crew
     CONSTRAINT uk_crew_member_work_place
         UNIQUE (member_id, work_place_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_crew_member_join_status_status_deleted_work_place
     ON crew (member_id, join_status, status, deleted_at, work_place_id);
@@ -164,12 +165,12 @@ CREATE TABLE crew_invitation
     invite_code          CHAR(6)     NOT NULL,
     status               VARCHAR(20) NOT NULL,
     expires_at           DATETIME    NOT NULL,
-    used_at              DATETIME NULL,
-    used_by_member_id    BIGINT NULL,
+    used_at              DATETIME    NULL,
+    used_by_member_id    BIGINT      NULL,
     failed_attempt_count INT         NOT NULL DEFAULT 0,
     created_at           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at           DATETIME NULL,
+    deleted_at           DATETIME    NULL,
 
     PRIMARY KEY (crew_invitation_id),
 
@@ -180,9 +181,9 @@ CREATE TABLE crew_invitation
         FOREIGN KEY (work_place_id)
             REFERENCES work_place (work_place_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_crew_invitation_work_place_status
     ON crew_invitation (work_place_id, status);
@@ -199,7 +200,7 @@ CREATE TABLE terms
     terms_id   BIGINT       NOT NULL AUTO_INCREMENT,
     terms_type VARCHAR(50)  NOT NULL,
     title      VARCHAR(100) NOT NULL,
-    required   TINYINT(1) NOT NULL,
+    required   TINYINT(1)   NOT NULL,
     status     VARCHAR(20)  NOT NULL,
     version    VARCHAR(20)  NOT NULL,
     content    TEXT         NOT NULL,
@@ -214,9 +215,9 @@ CREATE TABLE terms
     CONSTRAINT chk_terms_required
         CHECK (required IN (0, 1))
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_terms_type_status
     ON terms (terms_type, status);
@@ -225,13 +226,13 @@ CREATE INDEX idx_terms_type_status
 
 CREATE TABLE member_terms_agreement
 (
-    member_terms_agreement_id BIGINT   NOT NULL AUTO_INCREMENT,
-    terms_id                  BIGINT   NOT NULL,
-    member_id                 BIGINT   NOT NULL,
+    member_terms_agreement_id BIGINT     NOT NULL AUTO_INCREMENT,
+    terms_id                  BIGINT     NOT NULL,
+    member_id                 BIGINT     NOT NULL,
     agreed                    TINYINT(1) NOT NULL,
-    agreed_at                 DATETIME NOT NULL,
-    created_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    agreed_at                 DATETIME   NOT NULL,
+    created_at                DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (member_terms_agreement_id),
 
@@ -245,9 +246,9 @@ CREATE TABLE member_terms_agreement
     CONSTRAINT chk_member_terms_agreement_agreed
         CHECK (agreed IN (0, 1))
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_member_terms_agreement_member_id
     ON member_terms_agreement (member_id);
@@ -263,11 +264,11 @@ CREATE TABLE notice
     writer_member_id BIGINT       NOT NULL,
     title            VARCHAR(100) NOT NULL,
     content          TEXT         NOT NULL,
-    representative   TINYINT(1) NOT NULL DEFAULT 0,
+    representative   TINYINT(1)   NOT NULL DEFAULT 0,
     status           VARCHAR(20)  NOT NULL,
     created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at       DATETIME NULL,
+    deleted_at       DATETIME     NULL,
 
     PRIMARY KEY (notice_id),
 
@@ -278,9 +279,9 @@ CREATE TABLE notice
     CONSTRAINT chk_notice_representative
         CHECK (representative IN (0, 1))
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_notice_work_place_status_deleted_created_id
     ON notice (work_place_id, status, deleted_at, created_at DESC, notice_id DESC);
@@ -291,7 +292,7 @@ CREATE INDEX idx_notice_work_place_representative_status_deleted
 CREATE TABLE notice_image
 (
     notice_image_id    BIGINT       NOT NULL AUTO_INCREMENT,
-    notice_id          BIGINT NULL,
+    notice_id          BIGINT       NULL,
     uploader_member_id BIGINT       NOT NULL,
     original_file_name VARCHAR(255) NOT NULL,
     stored_file_name   VARCHAR(100) NOT NULL,
@@ -301,10 +302,10 @@ CREATE TABLE notice_image
     file_size          BIGINT       NOT NULL,
     display_order      INT          NOT NULL DEFAULT 0,
     status             VARCHAR(20)  NOT NULL,
-    uploaded_at        DATETIME NULL,
+    uploaded_at        DATETIME     NULL,
     created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at         DATETIME NULL,
+    deleted_at         DATETIME     NULL,
 
     PRIMARY KEY (notice_image_id),
 
@@ -318,9 +319,9 @@ CREATE TABLE notice_image
     CONSTRAINT chk_notice_image_display_order
         CHECK (display_order BETWEEN 0 AND 5)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_notice_image_notice_status_deleted_order
     ON notice_image (notice_id, status, deleted_at, display_order, notice_image_id);
@@ -338,7 +339,7 @@ CREATE TABLE notice_reaction
     status             VARCHAR(20) NOT NULL,
     created_at         DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at         DATETIME NULL,
+    deleted_at         DATETIME    NULL,
 
     PRIMARY KEY (notice_reaction_id),
 
@@ -349,9 +350,9 @@ CREATE TABLE notice_reaction
     CONSTRAINT uk_notice_reaction_notice_member
         UNIQUE (notice_id, member_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_notice_reaction_notice_status_type
     ON notice_reaction (notice_id, status, reaction_type);
@@ -369,7 +370,7 @@ CREATE TABLE notice_comment
     status            VARCHAR(20)  NOT NULL,
     created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at        DATETIME NULL,
+    deleted_at        DATETIME     NULL,
 
     PRIMARY KEY (notice_comment_id),
 
@@ -377,9 +378,9 @@ CREATE TABLE notice_comment
         FOREIGN KEY (notice_id)
             REFERENCES notice (notice_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_notice_comment_notice_status_deleted_id
     ON notice_comment (notice_id, status, deleted_at, notice_comment_id);
@@ -395,10 +396,10 @@ CREATE TABLE fcm_token
     app_version        VARCHAR(30)  NOT NULL,
     status             VARCHAR(20)  NOT NULL,
     last_registered_at DATETIME     NOT NULL,
-    last_used_at       DATETIME NULL,
+    last_used_at       DATETIME     NULL,
     created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at         DATETIME NULL,
+    deleted_at         DATETIME     NULL,
 
     PRIMARY KEY (fcm_token_id),
 
@@ -409,9 +410,9 @@ CREATE TABLE fcm_token
     CONSTRAINT uk_fcm_token_member_device
         UNIQUE (member_id, device_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_fcm_token_member_status
     ON fcm_token (member_id, status);
@@ -428,12 +429,12 @@ CREATE TABLE notification
     push_policy        VARCHAR(20)  NOT NULL,
     title              VARCHAR(100) NOT NULL,
     body               VARCHAR(500) NOT NULL,
-    data               JSON NULL,
-    read_at            DATETIME NULL,
+    data               JSON         NULL,
+    read_at            DATETIME     NULL,
     status             VARCHAR(20)  NOT NULL,
     created_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at         DATETIME NULL,
+    deleted_at         DATETIME     NULL,
 
     PRIMARY KEY (notification_id),
 
@@ -441,9 +442,9 @@ CREATE TABLE notification
         FOREIGN KEY (receiver_member_id)
             REFERENCES member (member_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_notification_receiver_status_created
     ON notification (receiver_member_id, status, created_at);
@@ -454,19 +455,19 @@ CREATE INDEX idx_notification_receiver_read
 
 CREATE TABLE notification_delivery
 (
-    notification_delivery_id BIGINT      NOT NULL AUTO_INCREMENT,
-    notification_id          BIGINT      NOT NULL,
-    fcm_token_id             BIGINT NULL,
-    channel                  VARCHAR(20) NOT NULL,
-    status                   VARCHAR(20) NOT NULL,
+    notification_delivery_id BIGINT       NOT NULL AUTO_INCREMENT,
+    notification_id          BIGINT       NOT NULL,
+    fcm_token_id             BIGINT       NULL,
+    channel                  VARCHAR(20)  NOT NULL,
+    status                   VARCHAR(20)  NOT NULL,
     provider_message_id      VARCHAR(255) NULL,
     error_code               VARCHAR(100) NULL,
     error_message            VARCHAR(500) NULL,
-    attempted_at             DATETIME NULL,
-    sent_at                  DATETIME NULL,
-    created_at               DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at               DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at               DATETIME NULL,
+    attempted_at             DATETIME     NULL,
+    sent_at                  DATETIME     NULL,
+    created_at               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at               DATETIME     NULL,
 
     PRIMARY KEY (notification_delivery_id),
 
@@ -474,9 +475,9 @@ CREATE TABLE notification_delivery
         FOREIGN KEY (notification_id)
             REFERENCES notification (notification_id)
 
-)ENGINE=InnoDB
- DEFAULT CHARSET = utf8mb4
- COLLATE = utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_notification_delivery_notification
     ON notification_delivery (notification_id);
@@ -500,7 +501,7 @@ CREATE TABLE `week_schedule`
     `status`                  VARCHAR(20) NOT NULL,
     `created_at`              DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`              DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `deleted_at`              DATETIME NULL,
+    `deleted_at`              DATETIME    NULL,
 
     PRIMARY KEY (`week_schedule_id`),
 
@@ -509,9 +510,9 @@ CREATE TABLE `week_schedule`
 
     CONSTRAINT `uk_week_schedule_work_place_name`
         UNIQUE (`work_place_id`, `week_schedule_name`)
-) ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX `idx_week_schedule_work_place_status_deleted_created`
     ON `week_schedule` (`work_place_id`, `status`, `deleted_at`, `created_at`, `week_schedule_id`);
@@ -522,14 +523,14 @@ CREATE TABLE `day`
     `week_schedule_id`    BIGINT      NOT NULL,
     `day_name`            VARCHAR(20) NOT NULL,
     `date`                DATE        NOT NULL,
-    `grouping_id`         INT NULL,
+    `grouping_id`         INT         NULL,
     `work_change_count`   INT         NOT NULL DEFAULT 0,
-    `holiday_status`      TINYINT(1) NOT NULL DEFAULT 0,
-    `select_limit_status` TINYINT(1) NOT NULL DEFAULT 0,
+    `holiday_status`      TINYINT(1)  NOT NULL DEFAULT 0,
+    `select_limit_status` TINYINT(1)  NOT NULL DEFAULT 0,
     `status`              VARCHAR(20) NOT NULL,
     `created_at`          DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`          DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `deleted_at`          DATETIME NULL,
+    `deleted_at`          DATETIME    NULL,
 
     PRIMARY KEY (`day_id`),
 
@@ -544,9 +545,9 @@ CREATE TABLE `day`
 
     CONSTRAINT `uk_day_week_schedule_day_name_date`
         UNIQUE (`week_schedule_id`, `day_name`, `date`)
-) ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX `idx_day_week_schedule_status_deleted_date`
     ON `day` (`week_schedule_id`, `status`, `deleted_at`, `date`, `day_id`);
@@ -564,7 +565,7 @@ CREATE TABLE `time_detail`
     `status`         VARCHAR(20) NOT NULL,
     `created_at`     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `deleted_at`     DATETIME NULL,
+    `deleted_at`     DATETIME    NULL,
 
     PRIMARY KEY (`time_detail_id`),
 
@@ -576,9 +577,9 @@ CREATE TABLE `time_detail`
 
     CONSTRAINT `uk_time_detail_day_work_part_no`
         UNIQUE (`day_id`, `work_part_no`)
-) ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX `idx_time_detail_day_status_deleted_work_part`
     ON `time_detail` (`day_id`, `status`, `deleted_at`, `work_part_no`);
@@ -599,8 +600,8 @@ CREATE TABLE `worker_select_submission`
     CONSTRAINT `uk_submission_place_schedule_member`
         UNIQUE (`work_place_id`, `week_schedule_id`, `member_id`)
 ) ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-COLLATE=utf8mb4_unicode_ci;
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `worker_unavailable_time_detail`
 (
@@ -621,5 +622,5 @@ CREATE TABLE `worker_unavailable_time_detail`
     CONSTRAINT `fk_worker_unavailable_time_detail_td`
         FOREIGN KEY (`time_detail_id`) REFERENCES `time_detail` (`time_detail_id`)
 ) ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-COLLATE=utf8mb4_unicode_ci;
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
