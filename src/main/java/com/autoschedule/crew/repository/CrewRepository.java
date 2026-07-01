@@ -64,6 +64,33 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
     );
 
     /**
+     * 사업장의 승인/활성 근무자 크루 목록을 회원 정보와 함께 조회한다.
+     */
+    @Query("""
+            select crew
+              from Crew crew
+              join fetch crew.member member
+             where crew.workPlace.id = :workPlaceId
+               and crew.joinStatus = :joinStatus
+               and crew.crewRole = :crewRole
+               and crew.status = :status
+               and crew.deletedAt is null
+               and member.status = com.autoschedule.member.domain.MemberStatus.ACTIVE
+             order by crew.id asc
+            """)
+    List<Crew> findActiveApprovedWorkersWithMember(
+            @Param("workPlaceId") Long workPlaceId,
+            @Param("joinStatus") CrewJoinStatus joinStatus,
+            @Param("crewRole") CrewRole crewRole,
+            @Param("status") CrewStatus status
+    );
+
+    /**
+     * 사업장과 크루 ID 기준으로 소속 정보를 조회한다.
+     */
+    Optional<Crew> findByIdAndWorkPlace_Id(Long crewId, Long workPlaceId);
+
+    /**
      * 특정 사업장에 승인되고 활성화된 역할별 크루 회원 ID를 조회한다.
      */
     @Query("""
