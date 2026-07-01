@@ -1,6 +1,9 @@
 package com.autoschedule.workplace;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,11 +23,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * 로그인 회원의 홈 매장 선택 목록 API를 검증한다.
+ * 사업장 조회, 추가 생성, 전화번호 수정 API를 검증한다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -168,6 +172,191 @@ class WorkPlaceApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(outsiderWorker)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workPlaces.length()").value(0));
+    }
+
+    /**
+     * 사장님이 로그인 후 추가 사업장을 생성하면 사업장과 OWNER 크루 소속이 함께 생성된다.
+     */
+    @Test
+    void ownerCreatesAdditionalWorkPlaceWithOwnerCrew() throws Exception {
+        String response = mockMvc.perform(post("/api/work-places")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "size": "FIVE_TO_NINE",
+                                  "name": "스위프 2호점",
+                                  "roadAddress": "서울시 강남구 테헤란로 1",
+                                  "detailAddress": "3층",
+                                  "phoneNumber": "0212345678"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.workPlaceId").isNumber())
+                .andExpect(jsonPath("$.name").value("스위프 2호점"))
+                .andExpect(jsonPath("$.size").value("FIVE_TO_NINE"))
+                .andExpect(jsonPath("$.roadAddress").value("서울시 강남구 테헤란로 1"))
+                .andExpect(jsonPath("$.detailAddress").value("3층"))
+                .andExpect(jsonPath("$.phoneNumber").value("0212345678"))
+                .andExpect(jsonPath("$.ownerMemberId").value(owner.getId()))
+                .andExpect(jsonPath("$.crewId").isNumber())
+                .andExpect(jsonPath("$.crewRole").value("OWNER"))
+                .andExpect(jsonPath("$.joinStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.crewStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.workPlaceStatus").value("ACTIVE"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Number workPlaceId = com.jayway.jsonpath.JsonPath.read(response, "$.workPlaceId");
+        Integer ownerCrewCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                          from crew
+                         where member_id = ?
+                           and work_place_id = ?
+                           and crew_role = 'OWNER'
+                           and join_status = 'APPROVED'
+                           and status = 'ACTIVE'
+                        """,
+                Integer.class,
+                owner.getId(),
+                workPlaceId.longValue()
+        );
+        org.assertj.core.api.Assertions.assertThat(ownerCrewCount).isEqualTo(1);
+    }
+
+    /**
+     * 사업장 전화번호는 부가 정보이므로 추가 사업장 생성 시 생략할 수 있다.
+     */
+    @Test
+    void ownerCreatesAdditionalWorkPlaceWithoutPhoneNumber() throws Exception {
+        mockMvc.perform(post("/api/work-places")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "size": "ONE_TO_FOUR",
+                                  "name": "전화번호 없는 매장",
+                                  "roadAddress": "서울시 강남구 테헤란로 2",
+                                  "detailAddress": null
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("전화번호 없는 매장"))
+                .andExpect(jsonPath("$.phoneNumber").value(nullValue()))
+                .andExpect(jsonPath("$.crewRole").value("OWNER"));
+    }
+
+    /**
+     * 근무자 계정은 사업장을 직접 추가할 수 없다.
+     */
+    @Test
+    void workerCannotCreateAdditionalWorkPlace() throws Exception {
+        mockMvc.perform(post("/api/work-places")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "size": "FIVE_TO_NINE",
+                                  "name": "근무자 매장",
+                                  "roadAddress": "서울시 강남구 테헤란로 3",
+                                  "phoneNumber": "0212345678"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 사장님은 본인 사업장의 전화번호를 추가하거나 수정할 수 있다.
+     */
+    @Test
+    void ownerUpdatesOwnWorkPlacePhoneNumber() throws Exception {
+        WorkPlace workPlace = createWorkPlace(owner, "전화번호 수정 매장");
+        crewRepository.save(Crew.createOwner(owner, workPlace));
+
+        mockMvc.perform(patch("/api/work-places/{workPlaceId}/phone-number", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "phoneNumber": "15881234"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.phoneNumber").value("15881234"));
+    }
+
+    /**
+     * 사장님은 본인 사업장의 전화번호를 null로 수정해 부가 정보를 삭제할 수 있다.
+     */
+    @Test
+    void ownerClearsOwnWorkPlacePhoneNumber() throws Exception {
+        WorkPlace workPlace = createWorkPlace(owner, "전화번호 삭제 매장");
+        crewRepository.save(Crew.createOwner(owner, workPlace));
+        jdbcTemplate.update(
+                "update work_place set phone_number = '0212345678' where work_place_id = ?",
+                workPlace.getId()
+        );
+
+        mockMvc.perform(patch("/api/work-places/{workPlaceId}/phone-number", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "phoneNumber": null
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.phoneNumber").value(nullValue()));
+    }
+
+    /**
+     * 사장님은 다른 사장님의 사업장 전화번호를 수정할 수 없다.
+     */
+    @Test
+    void ownerCannotUpdateOtherOwnersWorkPlacePhoneNumber() throws Exception {
+        Member otherOwner = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE,
+                "other-owner-subject",
+                "other-owner@test.com",
+                "other",
+                "01033333333",
+                MemberRole.OWNER
+        ));
+        WorkPlace otherWorkPlace = createWorkPlace(otherOwner, "다른 사장 매장");
+        crewRepository.save(Crew.createOwner(otherOwner, otherWorkPlace));
+
+        mockMvc.perform(patch("/api/work-places/{workPlaceId}/phone-number", otherWorkPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "phoneNumber": "0212345678"
+                                }
+                                """))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 매장 목록 조회 응답에는 부가 정보인 사업장 전화번호가 포함된다.
+     */
+    @Test
+    void myWorkPlacesIncludePhoneNumber() throws Exception {
+        WorkPlace workPlace = createWorkPlace(owner, "전화번호 있는 매장");
+        crewRepository.save(Crew.createOwner(owner, workPlace));
+        jdbcTemplate.update(
+                "update work_place set phone_number = '0212345678' where work_place_id = ?",
+                workPlace.getId()
+        );
+
+        mockMvc.perform(get("/api/work-places/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workPlaces[0].workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.workPlaces[0].phoneNumber").value("0212345678"));
     }
 
     private WorkPlace createWorkPlace(Member ownerMember, String name) {

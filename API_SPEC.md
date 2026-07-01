@@ -22,6 +22,8 @@
 - 프로필 이미지 수정/교체
 - 프로필 이미지 삭제
 - 내 사업장 목록 조회
+- 사업장 추가
+- 사업장 전화번호 추가/수정/삭제
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
@@ -470,6 +472,7 @@ POST /api/auth/signup/owner
 | workPlace.name | string | Y | 사업장 이름 |
 | workPlace.roadAddress | string | Y | 도로명 주소 |
 | workPlace.detailAddress | string | N | 상세 주소 |
+| workPlace.phoneNumber | string/null | N | 매장 전화번호. 부가 정보이며 하이픈 없는 8~11자리 숫자 |
 | device | object | Y | 로그인 기기 정보 |
 
 #### 요청 예시
@@ -491,7 +494,8 @@ POST /api/auth/signup/owner
     "size": "FIVE_TO_NINE",
     "name": "스위프",
     "roadAddress": "서울시 강남구 테헤란로",
-    "detailAddress": "3층"
+    "detailAddress": "3층",
+    "phoneNumber": null
   },
   "device": {
     "deviceId": "device-uuid",
@@ -811,6 +815,7 @@ OWNER, WORKER
       "size": "FIVE_TO_NINE",
       "roadAddress": "서울시 강남구 ...",
       "detailAddress": "3층",
+      "phoneNumber": "0212345678",
       "ownerMemberId": 1,
       "crewId": 10,
       "crewRole": "OWNER",
@@ -847,6 +852,7 @@ GET /api/work-places/{workPlaceId}/notices?page=0&size=20
 | workPlaces[].size | string | 매장 규모 |
 | workPlaces[].roadAddress | string | 도로명 주소 |
 | workPlaces[].detailAddress | string/null | 상세 주소 |
+| workPlaces[].phoneNumber | string/null | 매장 전화번호. 부가 정보이므로 없으면 `null` |
 | workPlaces[].ownerMemberId | number | 사업장을 생성한 사장님 회원 ID |
 | workPlaces[].crewId | number | 현재 회원의 해당 사업장 crew ID |
 | workPlaces[].crewRole | string | 현재 회원의 해당 사업장 역할. `OWNER`, `WORKER` |
@@ -873,6 +879,178 @@ GET /api/work-places/{workPlaceId}/notices?page=0&size=20
 | HTTP Status | Code | 상황 |
 | ---: | --- | --- |
 | 401 | 4002 | access token 없음 또는 유효하지 않음 |
+
+### 6.8.2 사업장 추가
+
+로그인한 사장님이 추가 사업장을 생성한다. 생성 성공 시 해당 사장님은 새 사업장의 `OWNER` 크루로 즉시 등록된다.
+
+```http
+POST /api/work-places
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### 요청 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| size | string | Y | 매장 규모. `ONE_TO_FOUR`, `FIVE_TO_NINE`, `TEN_TO_SEVENTEEN`, `EIGHTEEN_TO_TWENTY_THREE` |
+| name | string | Y | 사업장 이름. 최대 100자 |
+| roadAddress | string | Y | 도로명 주소. 최대 255자 |
+| detailAddress | string/null | N | 상세 주소. 최대 100자 |
+| phoneNumber | string/null | N | 매장 전화번호. 부가 정보이며 하이픈 없는 8~11자리 숫자 |
+
+#### 요청 예시
+
+```json
+{
+  "size": "FIVE_TO_NINE",
+  "name": "스위프 2호점",
+  "roadAddress": "서울시 강남구 테헤란로 1",
+  "detailAddress": "3층",
+  "phoneNumber": "0212345678"
+}
+```
+
+전화번호를 아직 입력하지 않는 경우 `phoneNumber`를 생략하거나 `null`로 전달할 수 있다.
+
+```json
+{
+  "size": "ONE_TO_FOUR",
+  "name": "전화번호 없는 매장",
+  "roadAddress": "서울시 강남구 테헤란로 2",
+  "detailAddress": null,
+  "phoneNumber": null
+}
+```
+
+#### 성공 응답
+
+```http
+201 Created
+```
+
+```json
+{
+  "workPlaceId": 2,
+  "name": "스위프 2호점",
+  "size": "FIVE_TO_NINE",
+  "roadAddress": "서울시 강남구 테헤란로 1",
+  "detailAddress": "3층",
+  "phoneNumber": "0212345678",
+  "ownerMemberId": 1,
+  "crewId": 15,
+  "crewRole": "OWNER",
+  "joinStatus": "APPROVED",
+  "crewStatus": "ACTIVE",
+  "workPlaceStatus": "ACTIVE"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님 계정만 사업장을 추가할 수 있다.
+- 사업장 생성과 OWNER 크루 생성은 같은 트랜잭션에서 처리한다.
+- 회원가입 시 최초 사업장 생성과 로그인 후 추가 사업장 생성은 같은 내부 생성 정책을 사용한다.
+- `phoneNumber`는 부가 정보이므로 `null`을 허용한다.
+- `phoneNumber`를 입력하는 경우 하이픈 없는 숫자 8~11자리만 허용한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 필수값 누락, 길이 초과, 전화번호 형식 오류 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+
+### 6.8.3 사업장 전화번호 추가/수정/삭제
+
+사장님이 본인 소유 사업장의 전화번호 부가 정보를 추가, 수정 또는 삭제한다.
+
+```http
+PATCH /api/work-places/{workPlaceId}/phone-number
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 전화번호를 수정할 사업장 ID |
+
+#### 요청 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| phoneNumber | string/null | N | 매장 전화번호. `null`이면 기존 전화번호를 삭제한다. 입력 시 하이픈 없는 8~11자리 숫자 |
+
+#### 요청 예시: 추가/수정
+
+```json
+{
+  "phoneNumber": "15881234"
+}
+```
+
+#### 요청 예시: 삭제
+
+```json
+{
+  "phoneNumber": null
+}
+```
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "workPlaceId": 2,
+  "name": "스위프 2호점",
+  "size": "FIVE_TO_NINE",
+  "roadAddress": "서울시 강남구 테헤란로 1",
+  "detailAddress": "3층",
+  "phoneNumber": "15881234",
+  "ownerMemberId": 1,
+  "crewId": 15,
+  "crewRole": "OWNER",
+  "joinStatus": "APPROVED",
+  "crewStatus": "ACTIVE",
+  "workPlaceStatus": "ACTIVE"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 수정할 수 있다.
+- 사장님 본인이 소유한 활성 사업장의 전화번호만 수정할 수 있다.
+- 전화번호 삭제는 `phoneNumber: null`로 요청한다.
+- 전체 사업장 정보 수정 API는 아직 제공하지 않는다. 현재는 전화번호 부가 정보만 별도 수정한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 전화번호 형식 오류 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+| 404 | 4004 | 본인 소유 활성 사업장을 찾을 수 없음 |
 
 ## 7. 크루 초대 API
 

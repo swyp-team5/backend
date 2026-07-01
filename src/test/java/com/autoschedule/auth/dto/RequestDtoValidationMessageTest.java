@@ -133,7 +133,7 @@ class RequestDtoValidationMessageTest {
      */
     @Test
     void workPlaceSignupRequestHasFieldValidationMessages() {
-        WorkPlaceSignupRequest request = new WorkPlaceSignupRequest(null, "", "", "상세주소".repeat(26));
+        WorkPlaceSignupRequest request = new WorkPlaceSignupRequest(null, "", "", "상세주소".repeat(26), null);
 
         Set<ConstraintViolation<WorkPlaceSignupRequest>> violations = validator.validate(request);
 
@@ -146,12 +146,24 @@ class RequestDtoValidationMessageTest {
                 WorkPlaceSize.FIVE_TO_NINE,
                 "상호명".repeat(34),
                 "도로명주소".repeat(52),
+                null,
                 null
         );
         Set<ConstraintViolation<WorkPlaceSignupRequest>> lengthViolations = validator.validate(tooLongRequest);
 
         assertViolation(lengthViolations, "name", "사업장 이름은 100자 이하로 입력해주세요.");
         assertViolation(lengthViolations, "roadAddress", "사업장 도로명 주소는 255자 이하로 입력해주세요.");
+
+        WorkPlaceSignupRequest invalidPhoneRequest = new WorkPlaceSignupRequest(
+                WorkPlaceSize.FIVE_TO_NINE,
+                "매장명",
+                "도로명 주소",
+                null,
+                "010-1234-5678"
+        );
+        Set<ConstraintViolation<WorkPlaceSignupRequest>> phoneViolations = validator.validate(invalidPhoneRequest);
+
+        assertViolation(phoneViolations, "phoneNumber", "사업장 전화번호는 하이픈 없이 8~11자리 숫자로 입력해주세요.");
     }
 
     /**

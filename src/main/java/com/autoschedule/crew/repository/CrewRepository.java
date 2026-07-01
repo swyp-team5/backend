@@ -27,6 +27,17 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
     Optional<Crew> findByMember_IdAndWorkPlace_Id(Long memberId, Long workPlaceId);
 
     /**
+     * 특정 회원의 특정 사업장 승인/활성 역할 소속을 조회한다.
+     */
+    Optional<Crew> findByMember_IdAndWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
+            Long memberId,
+            Long workPlaceId,
+            CrewJoinStatus joinStatus,
+            CrewRole crewRole,
+            CrewStatus status
+    );
+
+    /**
      * 일반 사용자 API에서 사용할 활성 크루 소속 존재 여부 확인 메서드다.
      */
     default boolean existsActiveByMemberIdAndWorkPlaceId(Long memberId, Long workPlaceId) {
