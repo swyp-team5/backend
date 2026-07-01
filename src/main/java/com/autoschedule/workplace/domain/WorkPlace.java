@@ -44,6 +44,9 @@ public class WorkPlace extends BaseEntity {
     @Column(name = "detail_address", length = 100)
     private String detailAddress;
 
+    @Column(name = "phone_number", length = 20)
+    private String phoneNumber;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private WorkPlaceStatus status;
@@ -61,14 +64,36 @@ public class WorkPlace extends BaseEntity {
             String roadAddress,
             String detailAddress
     ) {
+        return create(ownerMemberId, size, name, roadAddress, detailAddress, null);
+    }
+
+    /**
+     * 사장님이 관리할 사업장을 생성하고 선택 입력값인 매장 전화번호를 함께 저장한다.
+     */
+    public static WorkPlace create(
+            Long ownerMemberId,
+            WorkPlaceSize size,
+            String name,
+            String roadAddress,
+            String detailAddress,
+            String phoneNumber
+    ) {
         WorkPlace workPlace = new WorkPlace();
         workPlace.ownerMemberId = ownerMemberId;
         workPlace.size = size;
         workPlace.name = name;
         workPlace.roadAddress = roadAddress;
         workPlace.detailAddress = detailAddress;
+        workPlace.phoneNumber = phoneNumber;
         workPlace.status = WorkPlaceStatus.ACTIVE;
         return workPlace;
+    }
+
+    /**
+     * 매장 전화번호 부가 정보를 추가, 수정 또는 삭제한다.
+     */
+    public void updatePhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
     }
 
 }

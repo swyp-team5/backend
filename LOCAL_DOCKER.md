@@ -67,10 +67,10 @@ docker compose up --build
 
 ## MySQL 스키마 초기화
 
-MySQL 컨테이너는 최초 실행 시 아래 DDL 파일을 자동 실행합니다.
+MySQL 컨테이너는 최초 실행 시 아래 누적 DDL 파일을 자동 실행합니다.
 
 ```text
-src/main/resources/db/DDL_V6.sql
+src/main/resources/db/DDL_V7.sql
 ```
 
 그리고 프론트엔드 로컬 연동 테스트에 필요한 기본 약관 데이터도 함께 적재합니다.
@@ -125,8 +125,8 @@ AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES=10485760
 
 로컬에서 아직 S3 버킷을 만들지 않았다면 위 값은 임시값으로 둘 수 있습니다. 다만 프로필 이미지 업로드 URL 발급 후 실제 S3 업로드와 확정 API까지 테스트하려면 유효한 S3 버킷, AWS 인증 정보, 버킷 권한이 필요합니다.
 
-MySQL 최초 실행 시 적용되는 DDL 파일은 아래 최종본입니다.
+MySQL 최초 실행 시 적용되는 DDL 파일은 아래 누적 최종본입니다.
 
 ```text
-src/main/resources/db/DDL_V6.sql
+src/main/resources/db/DDL_V7.sql
 ```

@@ -22,9 +22,15 @@
 - 프로필 이미지 수정/교체
 - 프로필 이미지 삭제
 - 내 사업장 목록 조회
+- 사업장 추가
+- 사업장 전화번호 추가/수정/삭제
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
+- 공지 이미지 S3 업로드 URL 발급
+- 공지 이미지 S3 직접 업로드
+- 공지 작성 시 이미지 첨부
+- 공지 조회 시 이미지 메타데이터 조회
 - 사업장 공지사항 작성
 - 사업장 공지사항 목록 조회
 - 사업장 대표 공지 조회
@@ -466,6 +472,7 @@ POST /api/auth/signup/owner
 | workPlace.name | string | Y | 사업장 이름 |
 | workPlace.roadAddress | string | Y | 도로명 주소 |
 | workPlace.detailAddress | string | N | 상세 주소 |
+| workPlace.phoneNumber | string/null | N | 매장 전화번호. 부가 정보이며 하이픈 없는 8~11자리 숫자 |
 | device | object | Y | 로그인 기기 정보 |
 
 #### 요청 예시
@@ -487,7 +494,8 @@ POST /api/auth/signup/owner
     "size": "FIVE_TO_NINE",
     "name": "스위프",
     "roadAddress": "서울시 강남구 테헤란로",
-    "detailAddress": "3층"
+    "detailAddress": "3층",
+    "phoneNumber": null
   },
   "device": {
     "deviceId": "device-uuid",
@@ -807,6 +815,7 @@ OWNER, WORKER
       "size": "FIVE_TO_NINE",
       "roadAddress": "서울시 강남구 ...",
       "detailAddress": "3층",
+      "phoneNumber": "0212345678",
       "ownerMemberId": 1,
       "crewId": 10,
       "crewRole": "OWNER",
@@ -843,6 +852,7 @@ GET /api/work-places/{workPlaceId}/notices?page=0&size=20
 | workPlaces[].size | string | 매장 규모 |
 | workPlaces[].roadAddress | string | 도로명 주소 |
 | workPlaces[].detailAddress | string/null | 상세 주소 |
+| workPlaces[].phoneNumber | string/null | 매장 전화번호. 부가 정보이므로 없으면 `null` |
 | workPlaces[].ownerMemberId | number | 사업장을 생성한 사장님 회원 ID |
 | workPlaces[].crewId | number | 현재 회원의 해당 사업장 crew ID |
 | workPlaces[].crewRole | string | 현재 회원의 해당 사업장 역할. `OWNER`, `WORKER` |
@@ -869,6 +879,178 @@ GET /api/work-places/{workPlaceId}/notices?page=0&size=20
 | HTTP Status | Code | 상황 |
 | ---: | --- | --- |
 | 401 | 4002 | access token 없음 또는 유효하지 않음 |
+
+### 6.8.2 사업장 추가
+
+로그인한 사장님이 추가 사업장을 생성한다. 생성 성공 시 해당 사장님은 새 사업장의 `OWNER` 크루로 즉시 등록된다.
+
+```http
+POST /api/work-places
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### 요청 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| size | string | Y | 매장 규모. `ONE_TO_FOUR`, `FIVE_TO_NINE`, `TEN_TO_SEVENTEEN`, `EIGHTEEN_TO_TWENTY_THREE` |
+| name | string | Y | 사업장 이름. 최대 100자 |
+| roadAddress | string | Y | 도로명 주소. 최대 255자 |
+| detailAddress | string/null | N | 상세 주소. 최대 100자 |
+| phoneNumber | string/null | N | 매장 전화번호. 부가 정보이며 하이픈 없는 8~11자리 숫자 |
+
+#### 요청 예시
+
+```json
+{
+  "size": "FIVE_TO_NINE",
+  "name": "스위프 2호점",
+  "roadAddress": "서울시 강남구 테헤란로 1",
+  "detailAddress": "3층",
+  "phoneNumber": "0212345678"
+}
+```
+
+전화번호를 아직 입력하지 않는 경우 `phoneNumber`를 생략하거나 `null`로 전달할 수 있다.
+
+```json
+{
+  "size": "ONE_TO_FOUR",
+  "name": "전화번호 없는 매장",
+  "roadAddress": "서울시 강남구 테헤란로 2",
+  "detailAddress": null,
+  "phoneNumber": null
+}
+```
+
+#### 성공 응답
+
+```http
+201 Created
+```
+
+```json
+{
+  "workPlaceId": 2,
+  "name": "스위프 2호점",
+  "size": "FIVE_TO_NINE",
+  "roadAddress": "서울시 강남구 테헤란로 1",
+  "detailAddress": "3층",
+  "phoneNumber": "0212345678",
+  "ownerMemberId": 1,
+  "crewId": 15,
+  "crewRole": "OWNER",
+  "joinStatus": "APPROVED",
+  "crewStatus": "ACTIVE",
+  "workPlaceStatus": "ACTIVE"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님 계정만 사업장을 추가할 수 있다.
+- 사업장 생성과 OWNER 크루 생성은 같은 트랜잭션에서 처리한다.
+- 회원가입 시 최초 사업장 생성과 로그인 후 추가 사업장 생성은 같은 내부 생성 정책을 사용한다.
+- `phoneNumber`는 부가 정보이므로 `null`을 허용한다.
+- `phoneNumber`를 입력하는 경우 하이픈 없는 숫자 8~11자리만 허용한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 필수값 누락, 길이 초과, 전화번호 형식 오류 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+
+### 6.8.3 사업장 전화번호 추가/수정/삭제
+
+사장님이 본인 소유 사업장의 전화번호 부가 정보를 추가, 수정 또는 삭제한다.
+
+```http
+PATCH /api/work-places/{workPlaceId}/phone-number
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+#### 인증
+
+```text
+OWNER
+```
+
+#### Path Variable
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| workPlaceId | number | Y | 전화번호를 수정할 사업장 ID |
+
+#### 요청 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| phoneNumber | string/null | N | 매장 전화번호. `null`이면 기존 전화번호를 삭제한다. 입력 시 하이픈 없는 8~11자리 숫자 |
+
+#### 요청 예시: 추가/수정
+
+```json
+{
+  "phoneNumber": "15881234"
+}
+```
+
+#### 요청 예시: 삭제
+
+```json
+{
+  "phoneNumber": null
+}
+```
+
+#### 성공 응답
+
+```http
+200 OK
+```
+
+```json
+{
+  "workPlaceId": 2,
+  "name": "스위프 2호점",
+  "size": "FIVE_TO_NINE",
+  "roadAddress": "서울시 강남구 테헤란로 1",
+  "detailAddress": "3층",
+  "phoneNumber": "15881234",
+  "ownerMemberId": 1,
+  "crewId": 15,
+  "crewRole": "OWNER",
+  "joinStatus": "APPROVED",
+  "crewStatus": "ACTIVE",
+  "workPlaceStatus": "ACTIVE"
+}
+```
+
+#### 주요 비즈니스 규칙
+
+- 사장님만 수정할 수 있다.
+- 사장님 본인이 소유한 활성 사업장의 전화번호만 수정할 수 있다.
+- 전화번호 삭제는 `phoneNumber: null`로 요청한다.
+- 전체 사업장 정보 수정 API는 아직 제공하지 않는다. 현재는 전화번호 부가 정보만 별도 수정한다.
+
+#### 주요 에러
+
+| HTTP Status | Code | 상황 |
+| ---: | --- | --- |
+| 400 | 4000 | 전화번호 형식 오류 |
+| 401 | 4002 | access token 없음 또는 유효하지 않음 |
+| 403 | 4003 | OWNER 권한이 아님 |
+| 404 | 4004 | 본인 소유 활성 사업장을 찾을 수 없음 |
 
 ## 7. 크루 초대 API
 
@@ -1277,6 +1459,7 @@ OWNER
   "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
   "representative": true,
   "status": "ACTIVE",
+  "images": [],
   "myReactionType": null,
   "reactions": [],
   "createdAt": "2026-06-14T03:00:00",
@@ -1355,6 +1538,39 @@ OWNER
 - 검증에 성공한 이미지만 `ACTIVE` 상태가 되며 공지에 연결된다.
 - 검증 실패 시 공지는 생성되지 않는다.
 
+#### 8.2.2 공지 이미지 응답 공통 필드
+
+공지 이미지가 포함되는 API는 `images` 배열을 반환한다. 이미지가 없는 공지는 빈 배열을 반환한다.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| images | array | 공지에 연결된 활성 이미지 목록 |
+| images[].noticeImageId | number | 공지 이미지 ID |
+| images[].originalFileName | string | 업로드 URL 발급 시 전달한 원본 파일명 |
+| images[].storedFileName | string | S3 저장 파일명 |
+| images[].objectKey | string | S3 object key |
+| images[].imageUrl | string | 앱에서 바로 표시 가능한 public 이미지 URL |
+| images[].contentType | string | S3 객체 content type |
+| images[].fileSize | number | S3 객체 파일 크기 byte |
+| images[].displayOrder | number | 공지 안에서 이미지 노출 순서. `1`부터 시작 |
+
+`images` 배열이 포함되는 API는 다음과 같다.
+
+```text
+POST /api/work-places/{workPlaceId}/notices
+GET /api/work-places/{workPlaceId}/notices
+GET /api/work-places/{workPlaceId}/notices/representative
+GET /api/notices/{noticeId}
+PATCH /api/notices/{noticeId}
+```
+
+홈 화면 전용 요약 API는 현재 가벼운 공지 텍스트 노출 목적이므로 `images`를 반환하지 않는다.
+
+```text
+GET /api/home/work-places/{workPlaceId}/representative-notice
+GET /api/home/work-places/{workPlaceId}/latest-notice
+```
+
 ### 8.3 사업장 공지 목록 조회
 
 ```http
@@ -1389,6 +1605,18 @@ OWNER, WORKER
       "content": "쓰레기 안버려서 자꾸 오픈이 버립니다.",
       "representative": true,
       "status": "ACTIVE",
+      "images": [
+        {
+          "noticeImageId": 1,
+          "originalFileName": "notice-image.png",
+          "storedFileName": "7f5d8b4b.png",
+          "objectKey": "notice-images/1/1/7f5d8b4b.png",
+          "imageUrl": "https://static.example.com/notice-images/1/1/7f5d8b4b.png",
+          "contentType": "image/png",
+          "fileSize": 1024,
+          "displayOrder": 1
+        }
+      ],
       "myReactionType": "HEART",
       "reactions": [
         {
@@ -1433,6 +1661,8 @@ OWNER, WORKER
 - 근무자는 승인된 활성 크루로 소속된 사업장의 공지만 조회할 수 있다.
 - 삭제된 공지는 목록에 포함하지 않는다.
 - 기본 정렬은 최신 작성순이다.
+- `images`는 공지별 활성 이미지 목록이다. 이미지가 없는 공지는 빈 배열을 반환한다.
+- 목록 조회는 공지 ID 목록으로 활성 이미지를 한 번에 조회하여 N+1 쿼리를 방지한다.
 - `myReactionType`은 로그인한 회원이 선택한 공감이다. 선택한 공감이 없으면 `null`이다.
 - `reactions`는 6개 공감 타입의 현재 활성 집계이며, 집계가 0인 타입도 포함한다.
 
@@ -1456,6 +1686,18 @@ Authorization: Bearer {accessToken}
     "content": "홈에서 노출할 대표 공지입니다.",
     "representative": true,
     "status": "ACTIVE",
+    "images": [
+      {
+        "noticeImageId": 1,
+        "originalFileName": "notice-image.png",
+        "storedFileName": "7f5d8b4b.png",
+        "objectKey": "notice-images/1/1/7f5d8b4b.png",
+        "imageUrl": "https://static.example.com/notice-images/1/1/7f5d8b4b.png",
+        "contentType": "image/png",
+        "fileSize": 1024,
+        "displayOrder": 1
+      }
+    ],
     "myReactionType": null,
     "reactions": [
       {
@@ -1510,7 +1752,9 @@ Authorization: Bearer {accessToken}
 - 근무자는 승인된 활성 크루로 소속된 사업장의 공지만 조회할 수 있다.
 - 삭제된 공지는 조회할 수 없다.
 
-응답 형식은 `8.1 사업장 공지 작성` 성공 응답과 동일하다.
+응답 형식은 `8.2 사업장 공지 작성` 성공 응답과 동일하다.
+`images` 배열에는 공지에 연결된 활성 이미지 목록이 `displayOrder ASC` 순서로 포함된다.
+이미지가 없는 공지는 `images: []`를 반환한다.
 
 ### 8.6 공지 공감 선택/변경/취소
 
@@ -1708,6 +1952,7 @@ OWNER, WORKER
 - 근무자는 승인된 활성 크루로 소속된 사업장의 홈 대표 공지만 조회할 수 있다.
 - 대표 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
+- 홈 화면 전용 요약 응답이므로 `images`는 반환하지 않는다. 이미지가 필요한 화면은 공지 단건 조회 API를 추가로 호출한다.
 
 ### 8.9 홈 최신 공지 조회
 
@@ -1760,6 +2005,7 @@ OWNER, WORKER
 - 대표 공지가 가장 최근 작성된 공지라면 대표 공지 API와 최신 공지 API가 같은 공지를 반환할 수 있다.
 - 최신 공지가 없으면 404가 아니라 `notice: null`을 반환한다.
 - 홈 화면 전용 응답이므로 `status`, `representative`, `workPlaceId`는 반환하지 않는다.
+- 홈 화면 전용 요약 응답이므로 `images`는 반환하지 않는다. 이미지가 필요한 화면은 공지 단건 조회 API를 추가로 호출한다.
 
 ### 8.10 공지 수정
 
@@ -1775,7 +2021,9 @@ Content-Type: application/json
 OWNER
 ```
 
-요청 본문과 응답 형식은 `8.1 사업장 공지 작성`과 동일하다.
+요청 본문은 `title`, `content`, `representative`만 받는다.
+공지 수정 API는 현재 이미지 추가, 교체, 삭제를 처리하지 않는다.
+응답 형식은 `8.2 사업장 공지 작성` 성공 응답과 동일하며, 기존에 연결된 활성 이미지는 `images` 배열에 포함된다.
 
 #### 주요 비즈니스 규칙
 
@@ -3132,7 +3380,7 @@ idx_profile_image_member_status_deleted (member_id, status, deleted_at)
 #### S3 버킷 정책 요약
 
 - 업로드는 백엔드가 발급한 presigned PUT URL로만 수행한다.
-- 조회는 MVP 기준 `profile-images/*` public read를 허용한다.
+- 조회는 MVP 기준 `profile-images/*`, `notice-images/*` public read를 허용한다.
 - 버킷 전체 public open은 사용하지 않는다.
 - ACL은 사용하지 않는다.
 - 삭제/검증/URL 발급 권한은 백엔드 IAM principal만 가진다.

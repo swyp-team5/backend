@@ -15,8 +15,6 @@ import com.autoschedule.auth.refresh.RefreshTokenStore;
 import com.autoschedule.auth.social.SocialAuthCommand;
 import com.autoschedule.auth.social.SocialAuthProviderRegistry;
 import com.autoschedule.auth.social.SocialUserInfo;
-import com.autoschedule.crew.domain.Crew;
-import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
@@ -31,8 +29,8 @@ import com.autoschedule.terms.domain.TermsType;
 import com.autoschedule.terms.repository.MemberTermsAgreementRepository;
 import com.autoschedule.terms.repository.TermsRepository;
 import com.autoschedule.terms.service.SignupTermsPolicy;
-import com.autoschedule.workplace.domain.WorkPlace;
-import com.autoschedule.workplace.repository.WorkPlaceRepository;
+import com.autoschedule.workplace.service.WorkPlaceCreateCommand;
+import com.autoschedule.workplace.service.WorkPlaceService;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -60,8 +58,7 @@ public class AuthService {
     private final MemberRepository memberRepository;
     private final TermsRepository termsRepository;
     private final MemberTermsAgreementRepository memberTermsAgreementRepository;
-    private final WorkPlaceRepository workPlaceRepository;
-    private final CrewRepository crewRepository;
+    private final WorkPlaceService workPlaceService;
     private final RefreshTokenStore refreshTokenStore;
     private final JwtTokenProvider jwtTokenProvider;
     private final TokenHashService tokenHashService;
@@ -109,14 +106,13 @@ public class AuthService {
                 request.phoneNumber(),
                 MemberRole.OWNER
         ));
-        WorkPlace workPlace = workPlaceRepository.save(WorkPlace.create(
-                member.getId(),
+        workPlaceService.createInitialWorkPlaceForSignup(member, new WorkPlaceCreateCommand(
                 request.workPlace().size(),
                 request.workPlace().name(),
                 request.workPlace().roadAddress(),
-                request.workPlace().detailAddress()
+                request.workPlace().detailAddress(),
+                request.workPlace().phoneNumber()
         ));
-        crewRepository.save(Crew.createOwner(member, workPlace));
         saveTermsAgreements(member.getId(), request.termsAgreements());
         return issueLoginResponse(member, request.device());
     }
