@@ -14,7 +14,6 @@ public record WorkerSelectRequest(
         @Positive(message = "weekScheduleId는 양수여야 합니다.")
         Long weekScheduleId,
 
-        List<@NotNull(message = "timeDetailId는 null일 수 없습니다.")
-        @Positive(message = "timeDetailId는 양수여야 합니다.") Long> timeDetails
+        List<@Positive(message = "timeDetailId는 양수여야 합니다.") Long> timeDetails
 ) {
 }

@@ -59,10 +59,11 @@ public class WorkerSelectService {
         // 1. 회원 및 사업장 검증
         Member member = findActiveMember(memberId);
         WorkPlace workPlace = findActiveWorkPlace(workPlaceId);
+        WeekSchedule weekSchedule = findActiveWeekSchedule(request.weekScheduleId(), workPlace.getId());
         validateCrewMember(workPlace.getId(), member.getId());
 
         // 2. 중복 제출 검증
-        validateAlreadySubmitted(member.getId(), workPlace.getId(), request.weekScheduleId());
+        validateAlreadySubmitted(member.getId(), workPlace.getId(), weekSchedule.getId());
 
         List<Long> timeDetailIds = request.timeDetails() == null ? List.of() : request.timeDetails(); // null 이면 빈 리스트로 정규화
         List<Long> uniqueTimeDetailIds = timeDetailIds.stream()
@@ -74,7 +75,7 @@ public class WorkerSelectService {
         WorkerSelectSubmission submission;
         try {
             submission = workerSelectSubmissionRepository.save(
-                    WorkerSelectSubmission.create(workPlace.getId(), request.weekScheduleId(), member.getId())
+                    WorkerSelectSubmission.create(workPlace.getId(), weekSchedule.getId(), member.getId())
             );
         } catch (DataIntegrityViolationException e) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
@@ -89,7 +90,7 @@ public class WorkerSelectService {
         List<TimeDetail> timeDetails = timeDetailRepository
                 .findAllByIdInAndDay_WeekSchedule_IdAndDay_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
                         uniqueTimeDetailIds,
-                        request.weekScheduleId(),
+                        weekSchedule.getId(),
                         workPlace.getId(),
                         TimeDetailStatus.ACTIVE
                 );
