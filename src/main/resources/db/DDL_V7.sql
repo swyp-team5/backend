@@ -586,7 +586,7 @@ CREATE INDEX `idx_time_detail_day_status_deleted_work_part`
 CREATE TABLE `worker_select_submission`
 (
     `worker_select_submission_id` BIGINT      NOT NULL AUTO_INCREMENT,
-    `work_place_id`              BIGINT      NOT NULL,
+    `work_place_id`               BIGINT      NOT NULL,
     `week_schedule_id`            BIGINT      NOT NULL,
     `member_id`                   BIGINT      NOT NULL,
     `status`                      VARCHAR(20) NOT NULL,
@@ -598,7 +598,7 @@ CREATE TABLE `worker_select_submission`
 
     CONSTRAINT `uk_submission_place_schedule_member`
         UNIQUE (`work_place_id`, `week_schedule_id`, `member_id`)
-)   ENGINE=InnoDB
+) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
 
@@ -620,6 +620,6 @@ CREATE TABLE `worker_unavailable_time_detail`
 
     CONSTRAINT `fk_worker_unavailable_time_detail_td`
         FOREIGN KEY (`time_detail_id`) REFERENCES `time_detail` (`time_detail_id`)
-)   ENGINE=InnoDB
+) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
