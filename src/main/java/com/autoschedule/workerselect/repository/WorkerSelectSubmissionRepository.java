@@ -30,4 +30,15 @@ public interface WorkerSelectSubmissionRepository extends JpaRepository<WorkerSe
             List<Long> memberIds,
             WorkerSelectSubmissionStatus status
     );
+
+    /**
+     * 특정 사업장 + 주간 스케줄에 제출한 모든 근무자 목록을 조회한다. (자동 스케줄링용)
+     */
+    List<WorkerSelectSubmission> findByWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
+            Long workPlaceId,
+            Long weekScheduleId,
+            WorkerSelectSubmissionStatus status
+    );
+
+
 }
