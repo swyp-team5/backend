@@ -8,6 +8,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 public final class TestDatabaseCleaner {
 
     private static final String[] TABLES = {
+            "confirmed_schedule_assignment",
+            "confirmed_week_schedule",
+            "schedule_preview",
+            "schedule_generation_run",
+            "worker_unavailable_time_detail",
+            "worker_select_submission",
             "time_detail",
             "day",
             "week_schedule",
@@ -23,8 +29,8 @@ public final class TestDatabaseCleaner {
             "crew_invitation",
             "crew",
             "profile_image",
-            "work_place",
             "member_notification_setting",
+            "work_place",
             "member"
     };
 
