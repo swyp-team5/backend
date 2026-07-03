@@ -4424,8 +4424,8 @@ Authorization: Bearer {accessToken}
 
 | 필드명 | 타입   | 필수 | 설명                           |
 | --- |------| --- |------------------------------|
-| weekScheduleId | Long | O | 선택한 근무 불가 타임 ID 목록의 주차스케줄 ID |
-| timeDetails | List | X | 선택한 근무 불가 타임 ID 목록 (null이면 빈 리스트로 처리)           |
+| weekScheduleId | Long | O | 근무 불가 시간을 제출할 주차 스케줄 ID |
+| timeDetails | List<Long> | X | 선택한 근무 불가 타임 ID 목록 (`null`이면 빈 리스트로 처리) |
 
 ---
 
@@ -4520,9 +4520,11 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
-  "success": false,
-  "code": "RESOURCE_NOT_FOUND",
-  "message": "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다."
+  "code": "4004",
+  "message": "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다.",
+  "errors": [],
+  "path": "/api/work-places/1/worker-select",
+  "timestamp": "2026-07-03T14:30:00"
 }
 ```
 
@@ -4537,9 +4539,10 @@ Authorization: Bearer {accessToken}
 조회 기준은 다음과 같다.
 
 - 해당 사업장의 활성 크루 목록 조회
-- crew_role이 WORKER인 멤버들 전부조회
+- `crew_role`이 `WORKER`인 멤버만 조회
 - 크루의 memberId가 worker_select_submission 테이블에 존재하면 제출 완료
 - 존재하지 않으면 미제출
+- 이 API는 제출 여부만 제공하며, 근무자가 선택한 상세 `time_detail` 목록은 응답하지 않는다.
 
 ---
 
@@ -4638,8 +4641,492 @@ Authorization: Bearer {accessToken}
 
 ```json
 {
-  "success": false,
-  "code": "FORBIDDEN",
-  "message": "권한이 없습니다."
+  "code": "4003",
+  "message": "권한이 없습니다.",
+  "errors": [],
+  "path": "/api/work-places/1/week-schedules/2/worker-select/status",
+  "timestamp": "2026-07-03T14:30:00"
 }
 ```
+
+---
+
+## 18. 자동 스케줄 생성/미리보기/확정 API
+
+### 18-1. 자동 스케줄 생성 API
+
+사장이 특정 주간 스케줄 조건(`week_schedule`)과 근무자의 불가 시간 제출(`worker_select_submission`, `worker_unavailable_time_detail`)을 기준으로 가능한 스케줄 후보를 생성한다.
+
+생성 결과는 `schedule_generation_run`에 실행 이력으로 저장되고, 가능한 후보 N개는 `schedule_preview.preview_data` JSON 안에 한 번에 저장된다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs` |
+| 권한 | OWNER |
+
+#### 성공 응답: 201 Created
+
+```json
+{
+  "scheduleGenerationRunId": 1,
+  "schedulePreviewId": 1,
+  "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "candidateCount": 100,
+  "status": "GENERATED"
+}
+```
+
+#### 정책
+
+- 사장만 호출할 수 있다.
+- 요청자는 해당 사업장의 소유자여야 한다.
+- `weekScheduleId`는 해당 사업장에 속한 활성 스케줄 조건이어야 한다.
+- 해당 사업장의 승인된 활성 근무자 전원이 근무 불가 조건을 제출해야 생성할 수 있다.
+- `schedule_preview`는 후보 1건당 row를 만들지 않는다.
+- 가능한 모든 후보는 `preview_data.candidates` 배열 안에 저장한다.
+- `previewNo`, `score`는 DB 컬럼이 아니라 JSON 내부 필드다.
+
+---
+
+### 18-2. 자동 스케줄 미리보기 조회 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs/{runId}/preview` |
+| 권한 | OWNER |
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "scheduleGenerationRunId": 1,
+  "schedulePreviewId": 1,
+  "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "candidateCount": 2,
+  "previewData": {
+    "candidateCount": 2,
+    "candidates": [
+      {
+        "candidateNo": 1,
+        "score": 95,
+        "days": [
+          {
+            "dayId": 100,
+            "timeDetails": [
+              {
+                "timeDetailId": 1000,
+                "workerMemberIds": [3, 4]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 18-3. 주간 스케줄 확정 API
+
+사장이 미리보기 JSON 안의 후보 중 하나를 선택하여 실제 확정 스케줄로 전환한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/confirmed-week-schedules` |
+| 권한 | OWNER |
+
+#### 요청 Body
+
+```json
+{
+  "scheduleGenerationRunId": 1,
+  "schedulePreviewId": 1,
+  "selectedCandidateNo": 1
+}
+```
+
+#### 성공 응답: 201 Created
+
+```json
+{
+  "confirmedWeekScheduleId": 1,
+  "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "selectedCandidateNo": 1,
+  "assignmentCount": 14,
+  "status": "ACTIVE"
+}
+```
+
+#### 정책
+
+- 하나의 활성 `week_schedule`에는 활성 확정 스케줄을 1개만 만들 수 있다.
+- 확정 시 `confirmed_week_schedule` row 1개와 `confirmed_schedule_assignment` row N개를 생성한다.
+- `confirmed_schedule_assignment`는 `time_detail` 기준으로 근무자를 배정한다.
+- `work_date`, `start_time`, `close_time`, `rest_time`은 확정 배정 테이블에 중복 저장하지 않는다.
+- `selectedCandidateNo`가 미리보기 JSON에 없으면 확정할 수 없다.
+- 미리보기 JSON 안의 `timeDetailId`는 해당 `weekScheduleId`에 실제로 속해야 한다.
+
+#### 주요 에러
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4001 | 선택한 후보 번호가 미리보기 JSON에 없음 |
+| 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
+| 403 | 4003 | OWNER가 아니거나 해당 사업장 소유자가 아님 |
+| 404 | 4004 | 사업장, 주간 스케줄, 생성 이력, 미리보기를 찾을 수 없음 |
+| 409 | 4005 | 근무자 제출 미완료, 후보 없음, 이미 확정된 스케줄 존재 |
+
+---
+
+### 18-4. 확정 스케줄 단건 근무 슬롯 추가 API
+
+사장이 이미 확정된 주간 스케줄 안에서 단건 근무 슬롯(`time_detail`)과 근무자 배정(`confirmed_schedule_assignment`)을 직접 추가한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/assignments` |
+| 권한 | OWNER |
+
+#### 요청 Body
+
+```json
+{
+  "workDate": "2026-07-06",
+  "workPartNo": 3,
+  "timeName": "야간",
+  "startTime": "22:00",
+  "closeTime": "23:00",
+  "restTime": 0,
+  "workerMemberIds": [3, 4]
+}
+```
+
+#### 성공 응답: 201 Created
+
+```json
+{
+  "confirmedWeekScheduleId": 1,
+  "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "dayId": 100,
+  "timeDetailId": 1003,
+  "workDate": "2026-07-06",
+  "workPartNo": 3,
+  "timeName": "야간",
+  "startTime": "22:00:00",
+  "closeTime": "23:00:00",
+  "restTime": 0,
+  "workerMemberIds": [3, 4],
+  "assignmentCount": 2
+}
+```
+
+#### 정책
+
+- 확정된 주간 스케줄(`confirmed_week_schedule`)이 있어야만 추가할 수 있다.
+- `workDate`는 확정 스케줄이 바라보는 `week_schedule` 하위의 활성 `day.date` 중 하나여야 한다.
+- 아직 자동 스케줄 조건이 생성되지 않은 다다음주 이후 날짜 등은 추가할 수 없다.
+- 같은 `day` 안에 동일한 `workPartNo`의 활성 `time_detail`이 이미 있으면 추가할 수 없다.
+- `workerMemberIds`는 중복될 수 없다.
+- 모든 `workerMemberIds`는 해당 사업장에 승인된 활성 근무자여야 한다.
+- `startTime`은 `closeTime`보다 빨라야 한다.
+
+---
+
+### 18-5. 확정 스케줄 단건 근무 슬롯 수정 API
+
+사장이 확정된 근무 슬롯을 수정한다. 수정은 기존 `time_detail`과 해당 활성 확정 배정을 `DELETED` 처리한 뒤, 요청 값으로 새 `time_detail`과 새 확정 배정을 생성하는 방식이다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | PUT |
+| URL | `/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/time-details/{timeDetailId}/assignments` |
+| 권한 | OWNER |
+
+#### 요청 Body
+
+```json
+{
+  "workDate": "2026-07-06",
+  "workPartNo": 4,
+  "timeName": "수정타임",
+  "startTime": "10:00",
+  "closeTime": "14:00",
+  "restTime": 30,
+  "workerMemberIds": [4]
+}
+```
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "confirmedWeekScheduleId": 1,
+  "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "dayId": 100,
+  "timeDetailId": 1004,
+  "workDate": "2026-07-06",
+  "workPartNo": 4,
+  "timeName": "수정타임",
+  "startTime": "10:00:00",
+  "closeTime": "14:00:00",
+  "restTime": 30,
+  "workerMemberIds": [4],
+  "assignmentCount": 1
+}
+```
+
+#### 정책
+
+- `timeDetailId`는 해당 확정 스케줄의 `week_schedule` 하위 활성 `time_detail`이어야 한다.
+- 요청 `workDate`는 해당 확정 스케줄의 `week_schedule` 하위 활성 `day.date` 중 하나여야 한다.
+- 요청 날짜가 기존 슬롯 날짜와 달라도, 같은 확정 주간 스케줄 안의 날짜라면 수정할 수 있다.
+- 기존 `time_detail`을 직접 변경하지 않고 `DELETED` 처리 후 새 `time_detail`을 생성한다.
+- 기존 활성 `confirmed_schedule_assignment`도 `DELETED` 처리하고 새 배정을 생성한다.
+
+---
+
+### 18-6. 확정 스케줄 단건 근무 슬롯 삭제 API
+
+사장이 확정된 근무 슬롯을 삭제한다. 해당 `time_detail`과 그 슬롯에 묶인 활성 확정 배정을 `DELETED` 처리한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | DELETE |
+| URL | `/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/time-details/{timeDetailId}/assignments` |
+| 권한 | OWNER |
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "confirmedWeekScheduleId": 1,
+  "timeDetailId": 1000,
+  "deletedAssignmentCount": 1,
+  "status": "DELETED"
+}
+```
+
+#### 주요 에러
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4001 | 요청 날짜가 확정 주간 스케줄 기간에 포함되지 않음, 시간 범위 오류, 근무자 중복 |
+| 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
+| 403 | 4003 | OWNER가 아니거나 해당 사업장의 소유자가 아님 |
+| 404 | 4004 | 사업장, 확정 주간 스케줄, 근무 슬롯을 찾을 수 없음 |
+| 409 | 4005 | 같은 날짜에 동일한 근무 파트 번호가 이미 존재함 |
+
+---
+
+### 18-7. 근무자 본인 확정 스케줄 달력 조회 API
+
+근무자가 본인에게 배정된 확정 근무 일정을 기간 기준으로 조회한다. 지난 확정 근무 일정, 이번 주 진행 중 일정, 다음 주 확정 일정 모두 같은 API로 조회한다.
+
+이 API는 실제 출근/퇴근 기록이 아니라 `confirmed_schedule_assignment` 기준의 확정 근무 일정 조회 API다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/me/confirmed-schedules?from={from}&to={to}` |
+| 권한 | WORKER |
+
+#### Query Parameter
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| from | LocalDate | O | 조회 시작일 |
+| to | LocalDate | O | 조회 종료일 |
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "from": "2026-07-01",
+  "to": "2026-07-31",
+  "schedules": [
+    {
+      "workPlaceId": 1,
+      "workPlaceName": "스위프",
+      "workDate": "2026-07-06",
+      "dayName": "MONDAY",
+      "timeDetailId": 10,
+      "timeName": "오픈",
+      "workPartNo": 1,
+      "startTime": "09:00:00",
+      "closeTime": "13:00:00",
+      "restTime": 0
+    }
+  ]
+}
+```
+
+#### 정책
+
+- 근무자만 호출할 수 있다.
+- 로그인한 근무자 본인에게 배정된 확정 근무 일정만 조회한다.
+- `from`은 `to`보다 늦을 수 없다.
+- 조회 대상은 활성 `confirmed_week_schedule`, 활성 `confirmed_schedule_assignment`, 활성 `day`, 활성 `time_detail`만 포함한다.
+- 여러 사업장에 속한 근무자는 기간 내 본인 배정 일정이 사업장 구분 없이 함께 내려온다.
+
+---
+
+### 18-8. 사장용 사업장 기간 확정 스케줄 조회 API
+
+사장이 자신의 사업장의 확정 근무표를 임의 기간 기준으로 조회한다. 사장 홈, 근무표 화면, 월 단위/주 단위 근무자 스케줄 조회에서 공통으로 사용할 수 있다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/confirmed-schedules?from={from}&to={to}` |
+| 권한 | OWNER |
+
+#### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+#### Query Parameter
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| from | LocalDate | O | 조회 시작일 |
+| to | LocalDate | O | 조회 종료일 |
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "workPlaceId": 1,
+  "from": "2026-07-01",
+  "to": "2026-07-31",
+  "days": [
+    {
+      "workDate": "2026-07-06",
+      "dayName": "MONDAY",
+      "timeDetails": [
+        {
+          "timeDetailId": 10,
+          "timeName": "오픈",
+          "workPartNo": 1,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0,
+          "workers": [
+            {
+              "memberId": 3,
+              "name": "김철수",
+              "profileImageUrl": "https://static.example.com/profile-images/3/profile.png"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 정책
+
+- 사장만 호출할 수 있다.
+- 요청자는 해당 사업장의 소유자여야 한다.
+- `from`은 `to`보다 늦을 수 없다.
+- 조회 대상은 활성 `confirmed_week_schedule`, 활성 `confirmed_schedule_assignment`, 활성 `day`, 활성 `time_detail`만 포함한다.
+- 응답은 `workDate` 오름차순, `workPartNo` 오름차순, `startTime` 오름차순, 배정 ID 오름차순 기준으로 내려간다.
+- 근무자 프로필 이미지는 활성 프로필 이미지가 있는 경우에만 `profileImageUrl`로 내려간다.
+- 조회 기간에 확정 배정이 없으면 `days`는 빈 배열이다.
+
+#### 주요 에러
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4001 | 날짜 파라미터가 올바르지 않음 |
+| 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
+| 403 | 4003 | OWNER가 아니거나 접근 권한 없음 |
+| 404 | 4004 | 사업장을 찾을 수 없음 |
+
+---
+
+### 18-9. 사장용 사업장 주간 확정 스케줄 조회 API
+
+사장이 자신의 사업장의 주간 확정 근무표를 날짜와 근무 타임 기준으로 조회한다. 홈 화면의 이번 주 근무자 스케줄 조회에 사용한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/confirmed-schedules/weekly?weekStartDate={weekStartDate}` |
+| 권한 | OWNER |
+
+#### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+#### Query Parameter
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| weekStartDate | LocalDate | O | 조회할 주간 시작일 |
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "workPlaceId": 1,
+  "weekStartDate": "2026-07-06",
+  "weekEndDate": "2026-07-12",
+  "days": [
+    {
+      "workDate": "2026-07-06",
+      "dayName": "MONDAY",
+      "timeDetails": [
+        {
+          "timeDetailId": 10,
+          "timeName": "오픈",
+          "workPartNo": 1,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0,
+          "workers": [
+            {
+              "memberId": 3,
+              "name": "김철수",
+              "profileImageUrl": "https://static.example.com/profile-images/3/profile.png"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 정책
+
+- 사장만 호출할 수 있다.
+- 요청자는 해당 사업장의 소유자여야 한다.
+- `weekEndDate`는 서버가 `weekStartDate + 6일`로 계산한다.
+- 조회 대상은 활성 `confirmed_week_schedule`, 활성 `confirmed_schedule_assignment`, 활성 `day`, 활성 `time_detail`만 포함한다.
+- 근무자 프로필 이미지는 활성 프로필 이미지가 있는 경우에만 `profileImageUrl`로 내려간다.
+- 해당 주간에 확정 배정이 없으면 `days`는 빈 배열이다.
+
+#### 주요 에러
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4001 | 날짜 파라미터가 올바르지 않음 |
+| 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
+| 403 | 4003 | OWNER가 아니거나 접근 권한 없음 |
+| 404 | 4004 | 사업장을 찾을 수 없음 |

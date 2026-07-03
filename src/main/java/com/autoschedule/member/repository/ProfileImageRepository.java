@@ -6,6 +6,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 회원 프로필 이미지 메타데이터의 조회와 저장을 담당한다.
@@ -29,8 +31,16 @@ public interface ProfileImageRepository extends JpaRepository<ProfileImage, Long
     /**
      * 회원 ID 목록에 포함된 현재 유효한 프로필 이미지를 한 번에 조회한다.
      */
+    @Query("""
+            select profileImage
+              from ProfileImage profileImage
+              join fetch profileImage.member member
+             where member.id in :memberIds
+               and profileImage.status = :status
+               and profileImage.deletedAt is null
+            """)
     List<ProfileImage> findByMember_IdInAndStatusAndDeletedAtIsNull(
-            Collection<Long> memberIds,
-            ProfileImageStatus status
+            @Param("memberIds") Collection<Long> memberIds,
+            @Param("status") ProfileImageStatus status
     );
 }

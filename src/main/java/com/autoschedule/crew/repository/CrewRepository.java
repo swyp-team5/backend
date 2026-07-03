@@ -108,10 +108,13 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
     @Query("""
             select crew.member.id
               from Crew crew
+              join crew.member member
              where crew.workPlace.id = :workPlaceId
                and crew.joinStatus = :joinStatus
                and crew.crewRole = :crewRole
                and crew.status = :status
+               and crew.deletedAt is null
+               and member.status = com.autoschedule.member.domain.MemberStatus.ACTIVE
             """)
     List<Long> findMemberIdsByWorkPlaceAndRole(
             @Param("workPlaceId") Long workPlaceId,
