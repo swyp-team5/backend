@@ -58,10 +58,17 @@ public class ScheduleConditionService {
 
         LocalDate today = LocalDate.now(); // 오늘 일자를 가져오는 코드
 
-        // 다음 주 시작일 전날(일요일)을 최대 마감일로 제한
+        // 마감일값 제한
         LocalDate nextMonday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         LocalDate maxDueDate = nextMonday.minusDays(1);
-        LocalDate dueDate = today.plusDays(request.dueDays()).isAfter(maxDueDate) ? maxDueDate : today.plusDays(request.dueDays());
+        if (request.dueDate().isBefore(today)) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "마감일은 오늘 이후여야 합니다.");
+        }
+        if (request.dueDate().isAfter(maxDueDate)) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "마감일은 이번 주 일요일을 넘을 수 없습니다.");
+        }
+
+        LocalDate dueDate = request.dueDate();
 
         validateNextWeekScheduleNotDuplicated(workPlace.getId(), today);
 

@@ -3587,7 +3587,7 @@ Content-Type: application/json
   "workPlaceCloseTime": "22:00:00",
   "minPersonalWorkCount": 1,
   "maxPersonalWorkCount": 4,
-  "dueDays": 3,
+  "dueDate": "2026-06-25",
   "days": [
     {
       "dayName": "MONDAY",
@@ -3772,9 +3772,9 @@ Content-Type: application/json
 
 #### dueDays
 
-| 이름 | 타입 | 필수 | 설명            |
-| --- | --- | --- |---------------|
-| dueDays | Integer | Y | 마감기한에 적용될 마감일자|
+| 이름      | 타입     | 필수 | 설명  |
+|---------|--------| --- |-----|
+| dueDate | String | Y | 마감일자|
 
 ### days
 

@@ -30,8 +30,7 @@ public record WeekScheduleCreateRequest(
         Integer maxPersonalWorkCount,
 
         @NotNull(message = "마감일수는 필수입니다.")
-        @Min(value = 1, message = "마감일수는 1일 이상이어야 합니다.")
-        Integer dueDays,
+        LocalDate dueDate,
 
         @NotEmpty(message = "요일 선택은 필수 입니다.")
         List<@Valid DayCreateRequest> days
