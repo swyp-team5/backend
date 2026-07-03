@@ -3587,6 +3587,7 @@ Content-Type: application/json
   "workPlaceCloseTime": "22:00:00",
   "minPersonalWorkCount": 1,
   "maxPersonalWorkCount": 4,
+  "dueDays": 3,
   "days": [
     {
       "dayName": "MONDAY",
@@ -3768,6 +3769,12 @@ Content-Type: application/json
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
 | maxPersonalWorkCount | Integer | Y | 인원당 최대 근무수 |
+
+#### dueDays
+
+| 이름 | 타입 | 필수 | 설명            |
+| --- | --- | --- |---------------|
+| dueDays | Integer | Y | 마감기한에 적용될 마감일자|
 
 ### days
 
