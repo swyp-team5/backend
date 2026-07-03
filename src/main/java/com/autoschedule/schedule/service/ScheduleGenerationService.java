@@ -101,8 +101,12 @@ public class ScheduleGenerationService {
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
 
-        List<Long> workerMemberIds = findActiveWorkerMemberIds(workPlace.getId());
-        validateAllWorkersSubmitted(workPlace.getId(), weekSchedule.getId(), workerMemberIds);
+        List<Long> activeWorkerMemberIds = findActiveWorkerMemberIds(workPlace.getId());
+        List<Long> workerMemberIds = findSubmittedActiveWorkerMemberIds(
+                workPlace.getId(),
+                weekSchedule.getId(),
+                activeWorkerMemberIds
+        );
 
         List<Day> days = dayRepository.findByWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByDateAscIdAsc(
                 weekSchedule.getId(),
@@ -359,14 +363,14 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 모든 승인 근무자가 해당 주간 스케줄에 최초 제출을 완료했는지 검증한다.
+     * 활성 근무자 중 근무 불가 조건 제출을 완료한 근무자만 자동 스케줄 생성 대상으로 사용한다.
      */
-    private void validateAllWorkersSubmitted(Long workPlaceId, Long weekScheduleId, List<Long> workerMemberIds) {
+    private List<Long> findSubmittedActiveWorkerMemberIds(Long workPlaceId, Long weekScheduleId, List<Long> workerMemberIds) {
         if (workerMemberIds.isEmpty()) {
             throw new ApiException(ErrorCode.CONFLICT, "자동 스케줄을 생성할 승인 근무자가 없습니다.");
         }
 
-        Set<Long> submittedMemberIds = workerSelectSubmissionRepository
+        List<Long> submittedMemberIds = workerSelectSubmissionRepository
                 .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
                         workPlaceId,
                         weekScheduleId,
@@ -375,11 +379,14 @@ public class ScheduleGenerationService {
                 )
                 .stream()
                 .map(WorkerSelectSubmission::getMemberId)
-                .collect(Collectors.toSet());
+                .distinct()
+                .toList();
 
-        if (!submittedMemberIds.containsAll(workerMemberIds)) {
-            throw new ApiException(ErrorCode.CONFLICT, "모든 근무자의 근무 불가 조건 제출이 완료되어야 합니다.");
+        if (submittedMemberIds.isEmpty()) {
+            throw new ApiException(ErrorCode.CONFLICT, "자동 스케줄을 생성할 제출 완료 근무자가 없습니다.");
         }
+
+        return submittedMemberIds;
     }
 
     /**

@@ -3587,6 +3587,7 @@ Content-Type: application/json
   "workPlaceCloseTime": "22:00:00",
   "minPersonalWorkCount": 1,
   "maxPersonalWorkCount": 4,
+  "dueDate": "2026-06-21",
   "days": [
     {
       "dayName": "MONDAY",
@@ -3769,6 +3770,12 @@ Content-Type: application/json
 | --- | --- | --- | --- |
 | maxPersonalWorkCount | Integer | Y | 인원당 최대 근무수 |
 
+#### dueDate
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| dueDate | String(LocalDate) | Y | 근무 불가능 시간 제출 마감일. 예: `2026-06-21` |
+
 ### days
 
 | 이름 | 타입 | 필수 | 설명 |
@@ -3900,7 +3907,7 @@ HTTP/1.1 201 Created
   "weekScheduleId": 1,
   "workPlaceId": 10,
   "weekScheduleName": "6월 3주차",
-  "dueDate": "2026-06-23",
+  "dueDate": "2026-06-21",
   "status": "ACTIVE",
   "createdAt": "2026-06-20T09:00:00",
   "updatedAt": "2026-06-20T09:00:00"
@@ -3930,7 +3937,6 @@ HTTP/1.1 201 Created
 | 값 | 생성 방식 |
 | --- | --- |
 | weekScheduleName | 현재 날짜 기준 `"월 주차"` 형식으로 생성 |
-| dueDate | 현재 날짜 + 3일 |
 | status | `ACTIVE` |
 
 ---
@@ -4262,7 +4268,7 @@ HTTP/1.1 404 Not Found
   "workPlaceId": 10,
   "weekScheduleName": "2026년 6월 3주차",
   "nextWeekScheduleName": "2026년 6월 5주차",
-  "dueDate": "2026-06-23",
+  "dueDate": "2026-06-21",
   "groups": [
     {
       "groupingId": 1,
@@ -4312,7 +4318,7 @@ HTTP/1.1 404 Not Found
 | workPlaceId | Long | 사업장 ID                           |
 | weekScheduleName | String | 조회된 주간 스케줄 이름                    |
 | nextWeekScheduleName | String | 생성할 주간 스케줄 이름                    |
-| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일                |
+| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일                 |
 | groups | Array | groupingId 기준으로 묶인 요일별 스케줄 조건 목록 |
 | groups[].groupingId | Integer | 요일 그룹 ID                         |
 | groups[].dayNames | Array | 같은 그룹에 속한 요일 목록                  |
@@ -5123,3 +5129,52 @@ Authorization: Bearer {accessToken}
 | 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
 | 403 | 4003 | OWNER가 아니거나 접근 권한 없음 |
 | 404 | 4004 | 사업장을 찾을 수 없음 |
+
+---
+
+## 스케줄 조건/근무 불가 제출 최신 정책
+
+### 스케줄 조건 생성 dueDate 정책
+
+- `POST /api/work-places/{workPlaceId}/schedule-conditions` 요청에는 `dueDate`가 필수입니다.
+- `dueDate`는 `LocalDate` 문자열이며 예시는 `2026-06-21` 형식입니다.
+- `dueDate`는 오늘 날짜 이상이어야 합니다. 오늘 날짜는 허용됩니다.
+- `dueDate`는 생성 대상 주차의 시작일 전까지만 설정할 수 있습니다. 예를 들어 다음 주 월요일 스케줄 조건이라면 전날 일요일까지 허용됩니다.
+- 응답의 `dueDate`도 `LocalDate` 형식으로 내려갑니다.
+
+### 스케줄 조건 초기화 API
+
+| 항목 | 값 |
+| --- | --- |
+| Method | `DELETE` |
+| URL | `/api/work-places/{workPlaceId}/schedule-conditions/{weekScheduleId}` |
+| 인증 | 필요 |
+| 권한 | OWNER |
+| 성공 응답 | `204 No Content` |
+
+#### 처리 규칙
+
+- 사장 본인의 사업장에 속한 활성 스케줄 조건만 초기화할 수 있습니다.
+- 초기화 시 `week_schedule.status`는 `DELETED`로 변경되고 `deleted_at`이 기록됩니다.
+- 초기화된 스케줄 조건은 조회/제출/자동 생성 대상에서 제외됩니다.
+- 초기화 후 같은 다음 주차 스케줄 조건을 다시 생성할 수 있습니다.
+
+#### 주요 오류
+
+| HTTP Status | Code | 상황 |
+| --- | --- | --- |
+| 401 | 4001 | 인증 정보가 없거나 올바르지 않음 |
+| 403 | 4003 | 해당 사업장의 사장이 아님 |
+| 404 | 4004 | 사업장 또는 활성 스케줄 조건을 찾을 수 없음 |
+
+### 근무 불가 시간 제출 마감 정책
+
+- `POST /api/work-places/{workPlaceId}/worker-select`는 요청한 `weekScheduleId`의 `dueDate`가 지난 경우 제출할 수 없습니다.
+- 마감 이후 제출 시 `400 Bad Request`와 `4000` 코드가 반환됩니다.
+- 마감 이후 근무자가 뒤늦게 제출해야 한다면, 사장이 스케줄 조건을 초기화하고 조건 생성부터 다시 진행해야 합니다.
+
+### 자동 스케줄 생성 대상 정책
+
+- `POST /api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs`는 해당 스케줄 조건에 근무 불가 제출을 완료한 활성 근무자만 대상으로 자동 스케줄을 생성합니다.
+- 제출하지 않은 근무자는 자동 스케줄 생성 대상에서 제외됩니다.
+- 제출 완료 근무자가 0명인 경우 `409 Conflict`가 반환됩니다.

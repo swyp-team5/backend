@@ -236,6 +236,30 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
+     * 자동 스케줄 생성은 승인 근무자 전체가 아니라 제출을 완료한 활성 근무자만 대상으로 수행한다.
+     */
+    @Test
+    void generateSchedulePreview_usesOnlySubmittedWorkers() throws Exception {
+        jdbcTemplate.update(
+                "update week_schedule set max_personal_work_count = ? where week_schedule_id = ?",
+                2,
+                weekSchedule.getId()
+        );
+        submitWorkerUnavailable(workerA, List.of());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.candidateCount").value(1))
+                .andExpect(jsonPath("$.status").value("GENERATED"));
+
+        SchedulePreview preview = schedulePreviewRepository.findAll().get(0);
+        assertThat(preview.getPreviewData()).contains("\"workerMemberIds\": [" + workerA.getId() + "]");
+        assertThat(preview.getPreviewData()).doesNotContain("\"workerMemberIds\": [" + workerB.getId());
+    }
+
+    /**
      * 사장이 미리보기 JSON 안의 후보 번호를 선택하면 확정 스케줄과 배정 row가 생성된다.
      */
     @Test

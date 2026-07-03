@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -28,7 +28,10 @@ public record WeekScheduleCreateRequest(
         @Max(value = 7, message = "최대 근무 횟수는 7 이하여야 합니다.")
         Integer maxPersonalWorkCount,
 
-        @NotEmpty(message = "요일 선택은 필수 입니다.")
+        @NotNull(message = "제출 마감일은 필수입니다.")
+        LocalDate dueDate,
+
+        @NotEmpty(message = "요일 선택은 필수입니다.")
         List<@Valid DayCreateRequest> days
 ) {
 }

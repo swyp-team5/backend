@@ -1,6 +1,7 @@
 package com.autoschedule.schedulecondition;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -27,6 +28,7 @@ import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
+import com.jayway.jsonpath.JsonPath;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -186,6 +188,59 @@ class ScheduleConApiIntegrationTest {
         assertThat(saved.getWorkPlaceCloseTime()).isEqualTo(LocalTime.of(22, 0));
         assertThat(saved.getMinPersonalWorkCount()).isEqualTo(1);
         assertThat(saved.getMaxPersonalWorkCount()).isEqualTo(5);
+    }
+
+    /**
+     * 사장이 입력한 제출 마감일은 week_schedule.due_date에 DATE로 저장된다.
+     */
+    @Test
+    void createScheduleCondition_storesRequestedDueDate() throws Exception {
+        LocalDate dueDate = LocalDate.now()
+                .with(TemporalAdjusters.next(DayOfWeek.MONDAY))
+                .minusDays(1);
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildValidRequest(dueDate)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dueDate").value(dueDate.toString()));
+
+        WeekSchedule saved = weekScheduleRepository.findAll().get(0);
+        assertThat(saved.getDueDate()).isEqualTo(dueDate);
+    }
+
+    /**
+     * 사장이 스케줄 조건을 초기화하면 삭제 상태가 되고 같은 다음 주 조건을 다시 만들 수 있다.
+     */
+    @Test
+    void deleteScheduleCondition_marksWeekScheduleDeleted() throws Exception {
+        String response = mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildValidRequest()))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Number weekScheduleIdValue = JsonPath.read(response, "$.weekScheduleId");
+        Long weekScheduleId = weekScheduleIdValue.longValue();
+
+        mockMvc.perform(delete("/api/work-places/{workPlaceId}/schedule-conditions/{weekScheduleId}",
+                        workPlace.getId(), weekScheduleId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNoContent());
+
+        WeekSchedule deleted = weekScheduleRepository.findById(weekScheduleId).orElseThrow();
+        assertThat(deleted.getStatus()).isEqualTo(WeekScheduleStatus.DELETED);
+        assertThat(deleted.getDeletedAt()).isNotNull();
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildValidRequest()))
+                .andExpect(status().isCreated());
     }
 
     /**
@@ -506,7 +561,7 @@ class ScheduleConApiIntegrationTest {
         weekScheduleRepository.save(WeekSchedule.create(
                 workPlace,
                 nextWeekName,
-                LocalDate.now().plusDays(3),
+                defaultDueDate(),
                 LocalTime.of(9, 0),
                 LocalTime.of(22, 0),
                 1,
@@ -1060,6 +1115,10 @@ class ScheduleConApiIntegrationTest {
      * - 일요일: groupingId=null, timeDetails=[]
      */
     private String buildValidRequest() {
+        return buildValidRequest(defaultDueDate());
+    }
+
+    private String buildValidRequest(LocalDate dueDate) {
         LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         return """
                 {
@@ -1067,6 +1126,7 @@ class ScheduleConApiIntegrationTest {
                   "workPlaceCloseTime": "22:00:00",
                   "minPersonalWorkCount": 1,
                   "maxPersonalWorkCount": 5,
+                  "dueDate": "%s",
                   "days": [
                     %s,
                     %s,
@@ -1078,6 +1138,7 @@ class ScheduleConApiIntegrationTest {
                   ]
                 }
                 """.formatted(
+                dueDate,
                 buildDayJson("MONDAY",    nextMonday,             1, 0),
                 buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
                 buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
@@ -1086,6 +1147,12 @@ class ScheduleConApiIntegrationTest {
                 buildDayJson("SATURDAY",  nextMonday.plusDays(5), 2, 0),
                 buildSundayDayJson()
         );
+    }
+
+    private LocalDate defaultDueDate() {
+        return LocalDate.now()
+                .with(TemporalAdjusters.next(DayOfWeek.MONDAY))
+                .minusDays(1);
     }
 
     /**
@@ -1100,6 +1167,7 @@ class ScheduleConApiIntegrationTest {
                   "workPlaceCloseTime": "22:00:00",
                   "minPersonalWorkCount": 1,
                   "maxPersonalWorkCount": 5,
+                  "dueDate": "%s",
                   "days": [
                     {
                       "dayName": "MONDAY",
@@ -1155,6 +1223,7 @@ class ScheduleConApiIntegrationTest {
                   ]
                 }
                 """.formatted(
+                defaultDueDate(),
                 nextMonday,
                 nextMonday.plusDays(1),
                 nextMonday.plusDays(2),
@@ -1176,6 +1245,7 @@ class ScheduleConApiIntegrationTest {
                   "workPlaceCloseTime": "22:00:00",
                   "minPersonalWorkCount": %d,
                   "maxPersonalWorkCount": %d,
+                  "dueDate": "%s",
                   "days": [
                     %s,
                     %s,
@@ -1187,7 +1257,7 @@ class ScheduleConApiIntegrationTest {
                   ]
                 }
                 """.formatted(
-                min, max,
+                min, max, defaultDueDate(),
                 buildDayJson("MONDAY",    nextMonday,             1, 0),
                 buildDayJson("TUESDAY",   nextMonday.plusDays(1), 1, 0),
                 buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
@@ -1209,6 +1279,7 @@ class ScheduleConApiIntegrationTest {
                   "workPlaceCloseTime": "22:00:00",
                   "minPersonalWorkCount": 1,
                   "maxPersonalWorkCount": 5,
+                  "dueDate": "%s",
                   "days": [
                     %s,
                     %s,
@@ -1227,6 +1298,7 @@ class ScheduleConApiIntegrationTest {
                   ]
                 }
                 """.formatted(
+                defaultDueDate(),
                 buildDayJson("MONDAY", nextMonday, 1, 0),
                 buildDayJson("TUESDAY", nextMonday.plusDays(1), 1, 0),
                 buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
@@ -1248,6 +1320,7 @@ class ScheduleConApiIntegrationTest {
                   "workPlaceCloseTime": "22:00:00",
                   "minPersonalWorkCount": 1,
                   "maxPersonalWorkCount": 5,
+                  "dueDate": "%s",
                   "days": [
                     {
                       "dayName": "MONDAY",
@@ -1266,6 +1339,7 @@ class ScheduleConApiIntegrationTest {
                   ]
                 }
                 """.formatted(
+                defaultDueDate(),
                 nextMonday,
                 buildDayJson("TUESDAY", nextMonday.plusDays(1), 1, 0),
                 buildDayJson("WEDNESDAY", nextMonday.plusDays(2), 1, 0),
@@ -1319,7 +1393,7 @@ class ScheduleConApiIntegrationTest {
         return weekScheduleRepository.save(WeekSchedule.create(
                 workPlace,
                 "테스트 주차",
-                LocalDate.now().plusDays(3),
+                defaultDueDate(),
                 LocalTime.of(9, 0),
                 LocalTime.of(22, 0),
                 1,

@@ -58,7 +58,25 @@ public class ScheduleConditionController {
     }
 
     /**
-     * 달력 활성화용 날짜 목록을 조회한다. 근무자들이 근무 불가능한 일자 선택할 때 보는 달력
+     * 사장이 생성한 스케줄 조건을 초기화한다.
+     */
+    @OwnerOnly
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/api/work-places/{workPlaceId}/schedule-conditions/{weekScheduleId}")
+    public void deleteScheduleCondition(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
+            @PathVariable Long weekScheduleId
+    ) {
+        scheduleConditionService.deleteScheduleCondition(
+                principal.memberId(),
+                workPlaceId,
+                weekScheduleId
+        );
+    }
+
+    /**
+     * 달력 활성화용 날짜 목록을 조회한다. 근무자들이 근무 불가능한 일자를 선택할 때 보는 달력이다.
      */
     @WorkerOnly
     @GetMapping("/api/work-places/{workPlaceId}/schedule-conditions/calendar-activate")
