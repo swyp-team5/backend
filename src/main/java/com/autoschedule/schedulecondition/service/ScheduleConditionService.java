@@ -61,7 +61,7 @@ public class ScheduleConditionService {
         // 다음 주 시작일 전날(일요일)을 최대 마감일로 제한
         LocalDate nextMonday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         LocalDate maxDueDate = nextMonday.minusDays(1);
-        LocalDate dueDate = today.plusDays(3).isAfter(maxDueDate) ? maxDueDate : today.plusDays(3);
+        LocalDate dueDate = today.plusDays(request.dueDays()).isAfter(maxDueDate) ? maxDueDate : today.plusDays(request.dueDays());
 
         validateNextWeekScheduleNotDuplicated(workPlace.getId(), today);
 

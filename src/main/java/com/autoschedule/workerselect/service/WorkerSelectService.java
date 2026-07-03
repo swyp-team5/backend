@@ -33,6 +33,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -60,6 +61,7 @@ public class WorkerSelectService {
         Member member = findActiveMember(memberId);
         WorkPlace workPlace = findActiveWorkPlace(workPlaceId);
         WeekSchedule weekSchedule = findActiveWeekSchedule(request.weekScheduleId(), workPlace.getId());
+        validateDueDate(weekSchedule); // 마감일자 검증
         validateCrewMember(workPlace.getId(), member.getId());
 
         // 2. 중복 제출 검증
@@ -175,6 +177,15 @@ public class WorkerSelectService {
 
         if (exists) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
+        }
+    }
+
+    /**
+     * 마감기한을 확인한다.
+     */
+    private void validateDueDate(WeekSchedule weekSchedule) {
+        if (LocalDate.now().isAfter(weekSchedule.getDueDate())) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "근무 불가 제출 마감 기한이 지났습니다.");
         }
     }
 
