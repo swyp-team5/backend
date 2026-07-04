@@ -5180,3 +5180,220 @@ Authorization: Bearer {accessToken}
 - `POST /api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs`는 해당 스케줄 조건에 근무 불가 제출을 완료한 활성 근무자만 대상으로 자동 스케줄을 생성합니다.
 - 제출하지 않은 근무자는 자동 스케줄 생성 대상에서 제외됩니다.
 - 제출 완료 근무자가 0명인 경우 `409 Conflict`가 반환됩니다.
+
+---
+
+## 19. 교대/대타 요청 API
+
+확정된 근무 배정(`confirmed_schedule_assignment`)을 기준으로 근무자가 교대 또는 대타를 요청하고, 대상 근무자 응답 후 사장이 최종 승인/거절하는 기능이다.
+
+### 공통 정책
+
+- 모든 URL은 `/api/*` 규칙을 따른다.
+- 근무자 요청 API는 `WORKER` 권한이 필요하다.
+- 사장 처리/조회 API는 `OWNER` 권한이 필요하다.
+- 요청자와 대상자는 모두 해당 사업장의 승인된 활성 근무자여야 한다.
+- 요청자는 본인의 활성 확정 근무 배정만 교대/대타 요청할 수 있다.
+- 이미 지난 근무는 교대/대타 요청할 수 없다.
+- 같은 확정 근무 배정에 대해 `REQUESTED`, `ACCEPTED_BY_TARGET` 상태의 요청이 있으면 중복 요청할 수 없다.
+- 요청자는 대상 근무자가 응답하기 전(`REQUESTED`)까지만 취소할 수 있다.
+- 이미 수락/거절/승인/취소된 요청은 재처리할 수 없다.
+- 대상 근무자가 수락해야 사장이 최종 승인/거절할 수 있다.
+- 사장이 최종 승인하면 기존 배정 row는 `DELETED` 처리되고, 변경 결과가 새 활성 배정 row로 추가된다.
+- 주요 상태 변경 시 앱 내부 알림 및 FCM 발송 대상 알림이 생성된다.
+
+### 상태 값
+
+| status | 설명 |
+| --- | --- |
+| `REQUESTED` | 요청자가 교대/대타 요청을 생성한 상태 |
+| `ACCEPTED_BY_TARGET` | 대상 근무자가 요청을 수락한 상태 |
+| `REJECTED_BY_TARGET` | 대상 근무자가 요청을 거절한 상태 |
+| `APPROVED` | 사장이 최종 승인하여 확정 스케줄에 반영된 상태 |
+| `REJECTED_BY_OWNER` | 사장이 최종 거절한 상태 |
+| `CANCELED` | 요청자가 대상 근무자 응답 전 취소한 상태 |
+
+### 19-1. 대타 요청 생성 API
+
+A 근무자가 자신의 확정 근무를 B 근무자에게 넘기기 위해 요청한다. B는 해당 날짜/시간에 기존 활성 배정이 없어야 한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/substitute` |
+| 권한 | `WORKER` |
+| 성공 응답 | `201 Created` |
+
+```json
+{
+  "requestAssignmentId": 10,
+  "targetMemberId": 3,
+  "reason": "개인 일정으로 대타 요청합니다."
+}
+```
+
+### 19-2. 교대 요청 생성 API
+
+A 근무자와 B 근무자가 서로의 확정 근무를 바꾸기 위해 요청한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/shift-swap` |
+| 권한 | `WORKER` |
+| 성공 응답 | `201 Created` |
+
+```json
+{
+  "requestAssignmentId": 10,
+  "targetAssignmentId": 11,
+  "reason": "오후 근무와 교대 요청합니다."
+}
+```
+
+### 생성/상태 변경 응답 예시
+
+```json
+{
+  "workChangeRequestId": 1,
+  "workPlaceId": 1,
+  "requestType": "SUBSTITUTE",
+  "status": "REQUESTED",
+  "requesterMemberId": 2,
+  "targetMemberId": 3,
+  "requestAssignmentId": 10,
+  "targetAssignmentId": null,
+  "reason": "개인 일정으로 대타 요청합니다.",
+  "targetRespondedAt": null,
+  "processedByMemberId": null,
+  "processedAt": null,
+  "canceledAt": null,
+  "createdAt": "2026-07-04T17:48:20.288"
+}
+```
+
+### 19-3. 근무자 요청 목록 조회 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `GET` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests?scope=SENT&page=0&size=20` |
+| 권한 | `WORKER` |
+
+| Query | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| scope | String | `SENT` | `SENT`, `RECEIVED`, `ALL` |
+| page | Integer | `0` | 0 이상 |
+| size | Integer | `20` | 1 이상 100 이하 |
+
+### 19-4. 사장 요청 목록 조회 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `GET` |
+| URL | `/api/work-places/{workPlaceId}/owner/work-change-requests?page=0&size=20` |
+| 권한 | `OWNER` |
+
+### 목록 응답 예시
+
+```json
+{
+  "content": [
+    {
+      "workChangeRequestId": 1,
+      "workPlaceId": 1,
+      "requestType": "SUBSTITUTE",
+      "status": "REQUESTED",
+      "requesterMemberId": 2,
+      "targetMemberId": 3,
+      "requestAssignmentId": 10,
+      "targetAssignmentId": null,
+      "reason": "개인 일정으로 대타 요청합니다.",
+      "targetRespondedAt": null,
+      "processedByMemberId": null,
+      "processedAt": null,
+      "canceledAt": null,
+      "createdAt": "2026-07-04T17:48:20.288"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+### 19-5. 대상 근무자 수락 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/{requestId}/accept` |
+| 권한 | `WORKER` |
+
+- 요청의 `targetMemberId`와 로그인 근무자가 같아야 한다.
+- `REQUESTED` 상태에서만 수락할 수 있다.
+- 성공 시 상태는 `ACCEPTED_BY_TARGET`가 된다.
+
+### 19-6. 대상 근무자 거절 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/{requestId}/reject` |
+| 권한 | `WORKER` |
+
+```json
+{
+  "reason": "해당 시간에는 근무가 어렵습니다."
+}
+```
+
+### 19-7. 요청자 취소 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `DELETE` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/{requestId}` |
+| 권한 | `WORKER` |
+
+- 요청의 `requesterMemberId`와 로그인 근무자가 같아야 한다.
+- `REQUESTED` 상태에서만 취소할 수 있다.
+- 성공 시 상태는 `CANCELED`가 된다.
+
+### 19-8. 사장 최종 승인 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/owner/work-change-requests/{requestId}/approve` |
+| 권한 | `OWNER` |
+
+- 요청 사업장의 소유자만 승인할 수 있다.
+- `ACCEPTED_BY_TARGET` 상태에서만 승인할 수 있다.
+- 대타 승인 시 요청자의 기존 배정은 `DELETED` 처리되고 대상 근무자의 새 활성 배정이 생성된다.
+- 교대 승인 시 양쪽 기존 배정은 `DELETED` 처리되고 서로 바뀐 새 활성 배정이 생성된다.
+
+### 19-9. 사장 최종 거절 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/owner/work-change-requests/{requestId}/reject` |
+| 권한 | `OWNER` |
+
+```json
+{
+  "reason": "이번 주 근무표 확정 이후 변경이 어렵습니다."
+}
+```
+
+### 주요 오류
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4000/4001 | 요청 필드 누락, 페이지 파라미터 오류, 자기 자신에게 요청, 지난 근무 요청 |
+| 401 | 4002 | 인증 정보가 없거나 올바르지 않음 |
+| 403 | 4003 | 권한 없음, 사업장 소속 승인 근무자가 아님, 요청 처리 주체가 아님 |
+| 404 | 4004 | 사업장, 확정 근무 배정, 교대/대타 요청을 찾을 수 없음 |
+| 409 | 4005 | 대상 근무자가 해당 시간에 이미 근무 중, 처리 중인 중복 요청, 이미 처리된 요청 |
