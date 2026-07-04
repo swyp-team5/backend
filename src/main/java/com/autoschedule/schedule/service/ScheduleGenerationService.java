@@ -24,9 +24,11 @@ import com.autoschedule.schedule.dto.ManualScheduleAssignmentResponse;
 import com.autoschedule.schedule.dto.ScheduleGenerationRunResponse;
 import com.autoschedule.schedule.dto.SchedulePreviewResponse;
 import com.autoschedule.schedule.generator.ScheduleCandidate;
+import com.autoschedule.schedule.generator.ScheduleCandidateDay;
 import com.autoschedule.schedule.generator.ScheduleCandidateGenerationCommand;
 import com.autoschedule.schedule.generator.ScheduleCandidateGenerationResult;
 import com.autoschedule.schedule.generator.ScheduleCandidateGenerator;
+import com.autoschedule.schedule.generator.ScheduleCandidateTimeDetail;
 import com.autoschedule.schedule.repository.ConfirmedScheduleAssignmentRepository;
 import com.autoschedule.schedule.repository.ConfirmedWeekScheduleRepository;
 import com.autoschedule.schedule.repository.ScheduleGenerationRunRepository;
@@ -53,6 +55,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -72,6 +75,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ScheduleGenerationService {
+
+    private static final String RANDOM_SELECT_LIMIT_ALGORITHM_VERSION = "RND_SELECT_LIMIT_V1";
+    private static final String RANDOM_SELECT_LIMIT_ALGORITHM_SUFFIX = "+RND";
 
     private final MemberRepository memberRepository;
     private final WorkPlaceRepository workPlaceRepository;
@@ -101,39 +107,61 @@ public class ScheduleGenerationService {
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
 
-        List<Long> activeWorkerMemberIds = findActiveWorkerMemberIds(workPlace.getId());
-        List<Long> workerMemberIds = findSubmittedActiveWorkerMemberIds(
-                workPlace.getId(),
-                weekSchedule.getId(),
-                activeWorkerMemberIds
-        );
-
         List<Day> days = dayRepository.findByWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByDateAscIdAsc(
                 weekSchedule.getId(),
                 DayStatus.ACTIVE
         );
         List<TimeDetail> timeDetails = findActiveTimeDetails(days);
-        Map<Long, Set<Long>> unavailableWorkerIdsByTimeDetailId = findUnavailableWorkerIdsByTimeDetailId(
-                workPlace.getId(),
-                weekSchedule.getId(),
-                workerMemberIds
+        List<TimeDetail> normalTimeDetails = findNormalTimeDetails(timeDetails);
+        List<TimeDetail> randomTimeDetails = findRandomTimeDetails(timeDetails);
+        List<Long> activeWorkerMemberIds = findActiveWorkerMemberIds(workPlace.getId());
+        List<ScheduleCandidate> candidates;
+        String algorithmVersion;
+
+        if (normalTimeDetails.isEmpty()) {
+            if (activeWorkerMemberIds.isEmpty()) {
+                throw new ApiException(ErrorCode.CONFLICT, "자동 스케줄을 생성할 승인 근무자가 없습니다.");
+            }
+            candidates = List.of(new ScheduleCandidate(1, 0, List.of()));
+            algorithmVersion = RANDOM_SELECT_LIMIT_ALGORITHM_VERSION;
+        } else {
+            List<Long> workerMemberIds = findSubmittedActiveWorkerMemberIds(
+                    workPlace.getId(),
+                    weekSchedule.getId(),
+                    activeWorkerMemberIds
+            );
+            Map<Long, Set<Long>> unavailableWorkerIdsByTimeDetailId = findUnavailableWorkerIdsByTimeDetailId(
+                    workPlace.getId(),
+                    weekSchedule.getId(),
+                    workerMemberIds
+            );
+            ScheduleCandidateGenerationResult generationResult = scheduleCandidateGenerator.generate(
+                    new ScheduleCandidateGenerationCommand(
+                            weekSchedule,
+                            normalTimeDetails,
+                            workerMemberIds,
+                            unavailableWorkerIdsByTimeDetailId
+                    )
+            );
+            candidates = generationResult.candidates();
+            algorithmVersion = randomTimeDetails.isEmpty()
+                    ? generationResult.algorithmVersion()
+                    : generationResult.algorithmVersion() + RANDOM_SELECT_LIMIT_ALGORITHM_SUFFIX;
+        }
+
+        candidates = appendRandomAssignments(
+                candidates,
+                randomTimeDetails,
+                activeWorkerMemberIds,
+                weekSchedule.getMaxPersonalWorkCount()
         );
-        ScheduleCandidateGenerationResult generationResult = scheduleCandidateGenerator.generate(
-                new ScheduleCandidateGenerationCommand(
-                        weekSchedule,
-                        timeDetails,
-                        workerMemberIds,
-                        unavailableWorkerIdsByTimeDetailId
-                )
-        );
-        List<ScheduleCandidate> candidates = generationResult.candidates();
 
         if (candidates.isEmpty()) {
             scheduleGenerationRunRepository.save(ScheduleGenerationRun.failed(
                     weekSchedule,
                     workPlace.getId(),
                     owner.getId(),
-                    generationResult.algorithmVersion(),
+                    algorithmVersion,
                     "조건을 만족하는 스케줄 후보가 없습니다."
             ));
             throw new ApiException(ErrorCode.CONFLICT, "조건을 만족하는 스케줄 후보가 없습니다.");
@@ -144,7 +172,7 @@ public class ScheduleGenerationService {
                 workPlace.getId(),
                 owner.getId(),
                 candidates.size(),
-                generationResult.algorithmVersion()
+                algorithmVersion
         ));
         SchedulePreview preview = schedulePreviewRepository.save(SchedulePreview.create(
                 run,
@@ -340,6 +368,7 @@ public class ScheduleGenerationService {
      */
     private List<TimeDetail> findActiveTimeDetails(List<Day> days) {
         List<Long> dayIds = days.stream()
+                .filter(day -> !day.isHolidayStatus())
                 .map(Day::getId)
                 .toList();
         if (dayIds.isEmpty()) {
@@ -352,8 +381,114 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 사업장에 소속된 승인 근무자 memberId 목록을 조회한다.
+     * 일반 자동 스케줄링 알고리즘에 넘길 근무 상세 시간만 추린다.
      */
+    private List<TimeDetail> findNormalTimeDetails(List<TimeDetail> timeDetails) {
+        return timeDetails.stream()
+                .filter(timeDetail -> !timeDetail.getDay().isSelectLimitStatus())
+                .toList();
+    }
+
+    /**
+     * 근무자가 근무 불가로 선택할 수 없어 전체 활성 근무자 랜덤 배정이 필요한 근무 상세 시간만 추린다.
+     */
+    private List<TimeDetail> findRandomTimeDetails(List<TimeDetail> timeDetails) {
+        return timeDetails.stream()
+                .filter(timeDetail -> timeDetail.getDay().isSelectLimitStatus())
+                .toList();
+    }
+
+    /**
+     * 근무 제출 불가 요일의 근무 상세 시간을 전체 활성 근무자 중 랜덤으로 배정해 기존 후보에 병합한다.
+     */
+    private List<ScheduleCandidate> appendRandomAssignments(
+            List<ScheduleCandidate> candidates,
+            List<TimeDetail> randomTimeDetails,
+            List<Long> activeWorkerMemberIds,
+            int maxPersonalWorkCount
+    ) {
+        if (randomTimeDetails.isEmpty() || candidates.isEmpty()) {
+            return candidates;
+        }
+
+        List<ScheduleCandidate> mergedCandidates = new ArrayList<>(candidates.size());
+        for (ScheduleCandidate candidate : candidates) {
+            mergedCandidates.add(appendRandomAssignmentsToCandidate(
+                    candidate,
+                    randomTimeDetails,
+                    activeWorkerMemberIds,
+                    maxPersonalWorkCount
+            ));
+        }
+        return mergedCandidates;
+    }
+
+    /**
+     * 단일 후보에 랜덤 배정 슬롯을 추가한다.
+     */
+    private ScheduleCandidate appendRandomAssignmentsToCandidate(
+            ScheduleCandidate candidate,
+            List<TimeDetail> randomTimeDetails,
+            List<Long> activeWorkerMemberIds,
+            int maxPersonalWorkCount
+    ) {
+        Map<Long, List<ScheduleCandidateTimeDetail>> timeDetailsByDayId = new LinkedHashMap<>();
+        Map<Long, Integer> workCountByMemberId = new HashMap<>();
+
+        for (ScheduleCandidateDay day : candidate.days()) {
+            List<ScheduleCandidateTimeDetail> copiedTimeDetails = new ArrayList<>(day.timeDetails());
+            timeDetailsByDayId.put(day.dayId(), copiedTimeDetails);
+            for (ScheduleCandidateTimeDetail timeDetail : copiedTimeDetails) {
+                for (Long workerMemberId : timeDetail.workerMemberIds()) {
+                    workCountByMemberId.merge(workerMemberId, 1, Integer::sum);
+                }
+            }
+        }
+
+        for (TimeDetail randomTimeDetail : randomTimeDetails) {
+            List<Long> selectedWorkerMemberIds = selectRandomWorkerMemberIds(
+                    activeWorkerMemberIds,
+                    workCountByMemberId,
+                    maxPersonalWorkCount,
+                    randomTimeDetail.getWorkerCount()
+            );
+            timeDetailsByDayId
+                    .computeIfAbsent(randomTimeDetail.getDay().getId(), ignored -> new ArrayList<>())
+                    .add(new ScheduleCandidateTimeDetail(randomTimeDetail.getId(), selectedWorkerMemberIds));
+            selectedWorkerMemberIds.forEach(
+                    workerMemberId -> workCountByMemberId.merge(workerMemberId, 1, Integer::sum)
+            );
+        }
+
+        List<ScheduleCandidateDay> days = timeDetailsByDayId.entrySet().stream()
+                .map(entry -> new ScheduleCandidateDay(entry.getKey(), entry.getValue()))
+                .toList();
+        return new ScheduleCandidate(candidate.candidateNo(), candidate.score(), days);
+    }
+
+    /**
+     * 최대 근무 횟수를 넘지 않는 활성 근무자 중 필요한 인원을 랜덤으로 선택한다.
+     */
+    private List<Long> selectRandomWorkerMemberIds(
+            List<Long> activeWorkerMemberIds,
+            Map<Long, Integer> workCountByMemberId,
+            int maxPersonalWorkCount,
+            int requiredWorkerCount
+    ) {
+        List<Long> candidates = activeWorkerMemberIds.stream()
+                .filter(workerMemberId -> workCountByMemberId.getOrDefault(workerMemberId, 0) < maxPersonalWorkCount)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        if (candidates.size() < requiredWorkerCount) {
+            throw new ApiException(ErrorCode.CONFLICT, "랜덤 배정 가능한 근무자가 부족합니다.");
+        }
+
+        Collections.shuffle(candidates);
+        return candidates.stream()
+                .limit(requiredWorkerCount)
+                .toList();
+    }
+
     private List<Long> findActiveWorkerMemberIds(Long workPlaceId) {
         return crewRepository.findMemberIdsByWorkPlaceAndRole(
                 workPlaceId,

@@ -196,6 +196,36 @@ class WorkerSelectApiIntegrationTest {
     }
 
     /**
+     * 매장 휴일의 time_detail은 근무 불가 제출 대상으로 선택할 수 없다.
+     */
+    @Test
+    void selectWorkerUnavailable_failsWhenTimeDetailBelongsToHolidayDay() throws Exception {
+        TimeDetail holidayTimeDetail = saveRestrictedTimeDetail(true, false);
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithTimeDetails(List.of(holidayTimeDetail.getId()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
+     * 근무 제출 불가 요일의 time_detail은 근무 불가 제출 대상으로 선택할 수 없다.
+     */
+    @Test
+    void selectWorkerUnavailable_failsWhenTimeDetailBelongsToSelectLimitDay() throws Exception {
+        TimeDetail selectLimitTimeDetail = saveRestrictedTimeDetail(false, true);
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithTimeDetails(List.of(selectLimitTimeDetail.getId()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
      * 제출 마감 기한이 지난 주간 스케줄에는 근무 불가능 타임을 제출할 수 없다.
      */
     @Test
@@ -637,6 +667,31 @@ class WorkerSelectApiIntegrationTest {
         return """
                 { "weekScheduleId": %d, "timeDetails": %s }
                 """.formatted(weekSchedule.getId(), idsJson);
+    }
+
+    /**
+     * 휴일 또는 근무 제출 불가 요일에 속한 time_detail 테스트 데이터를 생성한다.
+     */
+    private TimeDetail saveRestrictedTimeDetail(boolean holidayStatus, boolean selectLimitStatus) {
+        Day restrictedDay = dayRepository.save(Day.create(
+                weekSchedule,
+                com.autoschedule.schedulecondition.domain.ScheduleDayName.TUESDAY,
+                LocalDate.of(2025, 7, 8),
+                2,
+                0,
+                holidayStatus,
+                selectLimitStatus
+        ));
+
+        return timeDetailRepository.save(TimeDetail.create(
+                restrictedDay,
+                1,
+                "제한",
+                1,
+                LocalTime.of(10, 0),
+                LocalTime.of(14, 0),
+                0
+        ));
     }
 
     /**

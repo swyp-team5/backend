@@ -483,6 +483,16 @@ public class ScheduleConditionService {
             );
         }
 
+        if (dayRequest.holidayStatus()) {
+            if (dayRequest.timeDetails() != null && !dayRequest.timeDetails().isEmpty()) {
+                throw new ApiException(
+                        ErrorCode.VALIDATION_FAILED,
+                        "매장 휴일에는 근무 상세 시간을 입력할 수 없습니다."
+                );
+            }
+            return;
+        }
+
         if (dayRequest.groupingId() == null) {
             // 휴일: 타임 상세 정보가 없어야 함
             if (dayRequest.timeDetails() != null && !dayRequest.timeDetails().isEmpty()) {

@@ -101,8 +101,9 @@ public class WorkerSelectService {
             throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "조회할 수 있는 근무 시간대 정보를 찾을 수 없습니다.");
         }
 
-        // 6. 근무 불가 시간대 목록 저장
         // 6. 불가 타임 목록 저장
+        validateSelectableTimeDetails(timeDetails);
+
         List<WorkerUnavailableTimeDetail> toSave = timeDetails.stream()
                 .map(td -> WorkerUnavailableTimeDetail.create(submission, td))
                 .toList();
@@ -177,6 +178,22 @@ public class WorkerSelectService {
 
         if (exists) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
+        }
+    }
+
+    /**
+     * 근무자가 선택한 time_detail이 휴일 또는 근무 제출 불가 요일에 속하지 않는지 검증한다.
+     */
+    private void validateSelectableTimeDetails(List<TimeDetail> timeDetails) {
+        boolean hasRestrictedDay = timeDetails.stream()
+                .anyMatch(timeDetail -> timeDetail.getDay().isHolidayStatus()
+                        || timeDetail.getDay().isSelectLimitStatus());
+
+        if (hasRestrictedDay) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "매장 휴일 또는 근무 제출 불가 요일의 근무 상세 시간은 제출할 수 없습니다."
+            );
         }
     }
 

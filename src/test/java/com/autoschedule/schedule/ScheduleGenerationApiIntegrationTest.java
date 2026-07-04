@@ -260,8 +260,65 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 사장이 미리보기 JSON 안의 후보 번호를 선택하면 확정 스케줄과 배정 row가 생성된다.
+     * 근무 제출 불가 요일은 제출 여부와 관계없이 해당 사업장의 활성 근무자 전체에서 랜덤 배정한다.
      */
+    @Test
+    void generateSchedulePreview_randomlyAssignsSelectLimitDayWithAllActiveWorkers() throws Exception {
+        jdbcTemplate.update(
+                "update week_schedule set max_personal_work_count = ? where week_schedule_id = ?",
+                2,
+                weekSchedule.getId()
+        );
+        Member workerC = createApprovedWorker(
+                "schedule-worker-c-random",
+                "worker-c-random@test.com",
+                "01044445555"
+        );
+        Day selectLimitDay = dayRepository.save(Day.create(
+                weekSchedule,
+                ScheduleDayName.TUESDAY,
+                LocalDate.of(2026, 7, 7),
+                2,
+                0,
+                false,
+                true
+        ));
+        TimeDetail selectLimitTimeDetail = timeDetailRepository.save(TimeDetail.create(
+                selectLimitDay,
+                1,
+                "공휴일",
+                2,
+                LocalTime.of(10, 0),
+                LocalTime.of(15, 0),
+                0
+        ));
+
+        submitWorkerUnavailable(workerA, List.of(evening));
+        submitWorkerUnavailable(workerB, List.of(morning));
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("GENERATED"));
+
+        SchedulePreview preview = schedulePreviewRepository.findAll().get(0);
+
+        assertThat(preview.getPreviewData()).contains("\"timeDetailId\": " + selectLimitTimeDetail.getId());
+        assertThat(preview.getPreviewData()).containsAnyOf(
+                "\"workerMemberIds\": [" + workerA.getId() + ", " + workerB.getId() + "]",
+                "\"workerMemberIds\": [" + workerB.getId() + ", " + workerA.getId() + "]",
+                "\"workerMemberIds\": [" + workerA.getId() + ", " + workerC.getId() + "]",
+                "\"workerMemberIds\": [" + workerC.getId() + ", " + workerA.getId() + "]",
+                "\"workerMemberIds\": [" + workerB.getId() + ", " + workerC.getId() + "]",
+                "\"workerMemberIds\": [" + workerC.getId() + ", " + workerB.getId() + "]"
+        );
+        assertThat(preview.getPreviewData()).containsAnyOf(
+                String.valueOf(workerB.getId()),
+                String.valueOf(workerC.getId())
+        );
+    }
+
     @Test
     void confirmSchedule_success() throws Exception {
         submitWorkerUnavailable(workerA, List.of(evening));

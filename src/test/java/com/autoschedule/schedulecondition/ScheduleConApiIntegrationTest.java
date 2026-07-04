@@ -155,6 +155,38 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
+     * 매장 휴일로 지정된 요일에는 time_detail을 생성할 수 없다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenHolidayDayHasTimeDetails() throws Exception {
+        String request = buildValidRequest()
+                .replaceFirst("\"holidayStatus\": false", "\"holidayStatus\": true");
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
+     * 근무 제출 불가 요일은 자동 스케줄링 랜덤 배정 대상이므로 time_detail 생성을 허용한다.
+     */
+    @Test
+    void createScheduleCondition_succeedsWhenSelectLimitDayHasTimeDetails() throws Exception {
+        String request = buildValidRequest()
+                .replaceFirst("\"selectLimitStatus\": false", "\"selectLimitStatus\": true");
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    /**
      * 그룹이 있는 영업일은 timeDetails 필드가 없으면 400으로 거절한다.
      */
     @Test
