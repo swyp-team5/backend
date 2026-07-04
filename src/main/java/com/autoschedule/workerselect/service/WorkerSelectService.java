@@ -49,7 +49,7 @@ public class WorkerSelectService {
     private final WorkerUnavailableTimeDetailRepository workerUnavailableTimeDetailRepository;
 
     /**
-     * 근무자가 선택한 불가능 근무 타임을 저장한다.
+     * 근무자가 선택한 근무 불가 시간대를 저장한다.
      */
     @Transactional
     public WorkerSelectResponse selectWorkerUnavailable(
@@ -57,7 +57,7 @@ public class WorkerSelectService {
             Long workPlaceId,
             WorkerSelectRequest request
     ) {
-        // 1. 회원 및 사업장 검증
+        // 1. 회원, 사업장, 주간 스케줄, 크루 소속, 제출 마감일을 검증
         Member member = findActiveMember(memberId);
         WorkPlace workPlace = findActiveWorkPlace(workPlaceId);
         WeekSchedule weekSchedule = findActiveWeekSchedule(request.weekScheduleId(), workPlace.getId());
@@ -67,13 +67,13 @@ public class WorkerSelectService {
         // 2. 중복 제출 검증
         validateAlreadySubmitted(member.getId(), workPlace.getId(), weekSchedule.getId());
 
-        List<Long> timeDetailIds = request.timeDetails() == null ? List.of() : request.timeDetails(); // null 이면 빈 리스트로 정규화
+        List<Long> timeDetailIds = request.timeDetails() == null ? List.of() : request.timeDetails(); // null이면 빈 리스트로 정규화
         List<Long> uniqueTimeDetailIds = timeDetailIds.stream()
                 .distinct()
                 .toList();
 
-        // [변경] 빈 리스트 분기 제거 — submission을 항상 먼저 저장하고, timeDetail이 있을 때만 추가 저장
-        // 3. 제출 현황(submission) 저장 — 빈 리스트든 아니든 항상 단건 저장
+        // 빈 리스트 제출도 유효한 제출이므로 submission을 먼저 저장하고, 선택 항목이 있을 때만 상세 row를 저장한다.
+        // 3. 제출 현황 저장
         WorkerSelectSubmission submission;
         try {
             submission = workerSelectSubmissionRepository.save(
@@ -83,12 +83,12 @@ public class WorkerSelectService {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "이미 근무 불가 정보를 제출했습니다.");
         }
 
-        // 4. 빈 리스트면 submission만 저장하고 종료 (time_detail 레코드 생성 없음)
+        // 4. 빈 리스트면 submission만 저장하고 종료한다. 이 경우 time_detail 상세 row는 생성하지 않는다.
         if (uniqueTimeDetailIds.isEmpty()) {
             return WorkerSelectResponse.of(workPlace.getId(), member.getId(), List.of());
         }
 
-        // 5. timeDetailId 유효성 검증 — 해당 사업장 + 주간 스케줄에 속한 값인지 확인
+        // 5. timeDetailId가 해당 사업장과 주간 스케줄에 속하는 활성 값인지 검증
         List<TimeDetail> timeDetails = timeDetailRepository
                 .findAllByIdInAndDay_WeekSchedule_IdAndDay_WeekSchedule_WorkPlace_IdAndStatusAndDeletedAtIsNull(
                         uniqueTimeDetailIds,
@@ -98,10 +98,10 @@ public class WorkerSelectService {
                 );
 
         if (timeDetails.size() != uniqueTimeDetailIds.size()) {
-            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다.");
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "조회할 수 있는 근무 시간대 정보를 찾을 수 없습니다.");
         }
 
-        // [변경] WorkerUnavailable 대신 WorkerUnavailableTimeDetail로 저장
+        // 6. 근무 불가 시간대 목록 저장
         // 6. 불가 타임 목록 저장
         List<WorkerUnavailableTimeDetail> toSave = timeDetails.stream()
                 .map(td -> WorkerUnavailableTimeDetail.create(submission, td))
@@ -118,7 +118,7 @@ public class WorkerSelectService {
     }
 
     /**
-     * 사업장 근무자들의 근무 불가 제출 여부를 조회한다.
+     * 사장이 사업장 근무자들의 근무 불가 제출 여부를 조회한다.
      */
     @Transactional(readOnly = true)
     public WorkerSelectStatusResponse getWorkerSelectStatus(
@@ -126,12 +126,12 @@ public class WorkerSelectService {
             Long workPlaceId,
             Long weekScheduleId
     ) {
-        // 1. 사장 및 사업장 검증
+        // 1. 사장과 사업장 검증
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
 
-        // 2. 사업장의 근무자 크루 목록 조회
+        // 2. 사업장의 승인 근무자 크루 목록 조회
         List<Crew> crews = crewRepository.findByWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
                 workPlace.getId(),
                 CrewJoinStatus.APPROVED,
@@ -212,7 +212,7 @@ public class WorkerSelectService {
                         workPlaceId,
                         WeekScheduleStatus.ACTIVE
                 )
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주차의 스케줄 조건을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 주간의 스케줄 조건을 찾을 수 없습니다."));
     }
 
     private void validateCrewMember(Long workPlaceId, Long memberId) {
@@ -225,7 +225,7 @@ public class WorkerSelectService {
         );
 
         if (!exists) {
-            throw new ApiException(ErrorCode.FORBIDDEN, "이 회원은 해당 사업장의 크루원이 아닙니다.");
+            throw new ApiException(ErrorCode.FORBIDDEN, "이 회원은 해당 사업장의 크루가 아닙니다.");
         }
     }
 

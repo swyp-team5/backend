@@ -1,7 +1,7 @@
 package com.autoschedule.schedule.dto;
 
 /**
- * 확정 스케줄 단건 근무 슬롯 삭제 결과를 전달한다.
+ * 확정 스케줄 단건 근무 파트 삭제 결과를 전달한다.
  */
 public record ManualScheduleAssignmentDeleteResponse(
         Long confirmedWeekScheduleId,

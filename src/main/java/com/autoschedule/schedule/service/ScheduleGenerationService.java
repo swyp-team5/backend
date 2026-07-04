@@ -115,7 +115,8 @@ public class ScheduleGenerationService {
         List<TimeDetail> timeDetails = findActiveTimeDetails(days);
         Map<Long, Set<Long>> unavailableWorkerIdsByTimeDetailId = findUnavailableWorkerIdsByTimeDetailId(
                 workPlace.getId(),
-                weekSchedule.getId()
+                weekSchedule.getId(),
+                workerMemberIds
         );
         ScheduleCandidateGenerationResult generationResult = scheduleCandidateGenerator.generate(
                 new ScheduleCandidateGenerationCommand(
@@ -180,7 +181,7 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 사장이 선택한 미리보기 후보를 확정 스케줄과 확정 배정으로 변환한다.
+     * 사장이 선택한 미리보기 후보를 확정 스케줄과 확정 배정으로 전환한다.
      */
     @Transactional
     public ConfirmedWeekScheduleResponse confirmWeekSchedule(
@@ -233,7 +234,7 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 확정된 주간 스케줄 안에 사장이 직접 근무 슬롯과 배정을 추가한다.
+     * 확정된 주간 스케줄 안에 사장이 직접 근무 파트와 배정을 추가한다.
      */
     @Transactional
     public ManualScheduleAssignmentResponse createManualAssignment(
@@ -270,7 +271,7 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 확정된 근무 슬롯을 새 time_detail과 배정으로 교체한다.
+     * 확정된 근무 파트를 새 time_detail과 배정으로 교체한다.
      */
     @Transactional
     public ManualScheduleAssignmentResponse updateManualAssignment(
@@ -310,7 +311,7 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 확정된 근무 슬롯과 해당 확정 배정을 삭제 처리한다.
+     * 확정된 근무 파트와 해당 확정 배정을 삭제 처리한다.
      */
     @Transactional
     public ManualScheduleAssignmentDeleteResponse deleteManualAssignment(
@@ -392,11 +393,16 @@ public class ScheduleGenerationService {
     /**
      * 제출된 근무 불가 time_detail을 timeDetailId 기준으로 묶는다.
      */
-    private Map<Long, Set<Long>> findUnavailableWorkerIdsByTimeDetailId(Long workPlaceId, Long weekScheduleId) {
+    private Map<Long, Set<Long>> findUnavailableWorkerIdsByTimeDetailId(
+            Long workPlaceId,
+            Long weekScheduleId,
+            List<Long> workerMemberIds
+    ) {
         List<WorkerSelectSubmission> submissions = workerSelectSubmissionRepository
-                .findByWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
                         workPlaceId,
                         weekScheduleId,
+                        workerMemberIds,
                         WorkerSelectSubmissionStatus.ACTIVE
                 );
         if (submissions.isEmpty()) {
@@ -558,11 +564,11 @@ public class ScheduleGenerationService {
                         confirmed.getWorkPlaceId(),
                         TimeDetailStatus.ACTIVE
                 )
-                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "근무 슬롯을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "근무 파트를 찾을 수 없습니다."));
     }
 
     /**
-     * 단건 근무 슬롯 추가/수정 요청의 업무 규칙을 검증한다.
+     * 단건 근무 파트 추가/수정 요청의 업무 규칙을 검증한다.
      */
     private void validateManualAssignmentRequest(
             Long workPlaceId,
@@ -606,7 +612,7 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 확정 근무 슬롯에 근무자별 확정 배정 row를 저장한다.
+     * 확정 근무 파트의 근무자별 확정 배정 row를 저장한다.
      */
     private void saveManualAssignments(
             ConfirmedWeekSchedule confirmed,

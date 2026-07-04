@@ -650,6 +650,10 @@ class WorkerSelectApiIntegrationTest {
      * 테스트 격리를 위해 관련 테이블을 참조 순서에 맞게 삭제한다.
      */
     private void cleanupDatabase() {
+        jdbcTemplate.update("delete from confirmed_schedule_assignment");
+        jdbcTemplate.update("delete from confirmed_week_schedule");
+        jdbcTemplate.update("delete from schedule_preview");
+        jdbcTemplate.update("delete from schedule_generation_run");
         jdbcTemplate.update("delete from worker_unavailable_time_detail");
         jdbcTemplate.update("delete from worker_select_submission");
         jdbcTemplate.update("delete from time_detail");
