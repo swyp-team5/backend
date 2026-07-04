@@ -27,6 +27,8 @@
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
+- 사업장 근무자 목록 조회
+- 사업장 근무자 삭제
 - 공지 이미지 S3 업로드 URL 발급
 - 공지 이미지 S3 직접 업로드
 - 공지 작성 시 이미지 첨부
@@ -55,8 +57,25 @@
 - 달력 활성화 일자 조회
 - 특정 일자 타임 상세조회
 - 최근 스케줄 조건 조회
+- 스케줄 조건 초기화
 - 근무자 근무불가 시간 선택
 - 근무자 제출 여부 조회
+- 사업장 근무자 근무 불가 제출 현황 조회
+- 자동 스케줄 생성
+- 자동 스케줄 미리보기 조회
+- 주간 스케줄 확정
+- 확정 스케줄 단건 근무 파트 추가
+- 확정 스케줄 단건 근무 파트 수정
+- 확정 스케줄 단건 근무 파트 삭제
+- 근무자 본인 확정 스케줄 달력 조회
+- 사장용 사업장 기간 확정 스케줄 조회
+- 사장용 사업장 주간 확정 스케줄 조회
+- 대타 요청 생성
+- 교대 요청 생성
+- 교대/대타 요청 목록 조회
+- 교대/대타 대상 근무자 수락/거절
+- 교대/대타 요청자 취소
+- 교대/대타 사장 최종 승인/거절
 
 모든 API URL은 `/api/*` 규칙을 따른다. `/api/v1/*` 형식은 사용하지 않는다.
 
@@ -3587,7 +3606,7 @@ Content-Type: application/json
   "workPlaceCloseTime": "22:00:00",
   "minPersonalWorkCount": 1,
   "maxPersonalWorkCount": 4,
-  "dueDate": "2026-06-25",
+  "dueDate": "2026-06-21",
   "days": [
     {
       "dayName": "MONDAY",
@@ -3770,11 +3789,11 @@ Content-Type: application/json
 | --- | --- | --- | --- |
 | maxPersonalWorkCount | Integer | Y | 인원당 최대 근무수 |
 
-#### dueDays
+#### dueDate
 
-| 이름      | 타입     | 필수 | 설명  |
-|---------|--------| --- |-----|
-| dueDate | String | Y | 마감일자|
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| dueDate | String(LocalDate) | Y | 근무 불가능 시간 제출 마감일. 예: `2026-06-21` |
 
 ### days
 
@@ -3907,7 +3926,7 @@ HTTP/1.1 201 Created
   "weekScheduleId": 1,
   "workPlaceId": 10,
   "weekScheduleName": "6월 3주차",
-  "dueDate": "2026-06-23",
+  "dueDate": "2026-06-21",
   "status": "ACTIVE",
   "createdAt": "2026-06-20T09:00:00",
   "updatedAt": "2026-06-20T09:00:00"
@@ -3937,7 +3956,6 @@ HTTP/1.1 201 Created
 | 값 | 생성 방식 |
 | --- | --- |
 | weekScheduleName | 현재 날짜 기준 `"월 주차"` 형식으로 생성 |
-| dueDate | 현재 날짜 + 3일 |
 | status | `ACTIVE` |
 
 ---
@@ -4269,7 +4287,7 @@ HTTP/1.1 404 Not Found
   "workPlaceId": 10,
   "weekScheduleName": "2026년 6월 3주차",
   "nextWeekScheduleName": "2026년 6월 5주차",
-  "dueDate": "2026-06-23",
+  "dueDate": "2026-06-21",
   "groups": [
     {
       "groupingId": 1,
@@ -4319,7 +4337,7 @@ HTTP/1.1 404 Not Found
 | workPlaceId | Long | 사업장 ID                           |
 | weekScheduleName | String | 조회된 주간 스케줄 이름                    |
 | nextWeekScheduleName | String | 생성할 주간 스케줄 이름                    |
-| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일                |
+| dueDate | LocalDate | 근무자 불가능 시간 제출 마감일                 |
 | groups | Array | groupingId 기준으로 묶인 요일별 스케줄 조건 목록 |
 | groups[].groupingId | Integer | 요일 그룹 ID                         |
 | groups[].dayNames | Array | 같은 그룹에 속한 요일 목록                  |
@@ -4511,7 +4529,7 @@ Authorization: Bearer {accessToken}
 | --- | --- |
 | 401 | 인증 정보가 올바르지 않습니다. |
 | 403 | 이 회원은 해당 사업장의 크루원이 아닙니다. |
-| 404 | 조회할 수 있는 근무 타임 정보를 찾을 수 없습니다. |
+| 404 | 조회할 수 있는 근무 시간대 정보를 찾을 수 없습니다. |
 | 400 | 해당 타임 정보는 해당 사업장에 속하지 않습니다. |
 
 ---
@@ -4521,7 +4539,7 @@ Authorization: Bearer {accessToken}
 ```json
 {
   "code": "4004",
-  "message": "조회할 수 있는 근무 타임 정보를 찾을 수 없습니다.",
+  "message": "조회할 수 있는 근무 시간대 정보를 찾을 수 없습니다.",
   "errors": [],
   "path": "/api/work-places/1/worker-select",
   "timestamp": "2026-07-03T14:30:00"
@@ -4683,7 +4701,9 @@ Authorization: Bearer {accessToken}
 - 사장만 호출할 수 있다.
 - 요청자는 해당 사업장의 소유자여야 한다.
 - `weekScheduleId`는 해당 사업장에 속한 활성 스케줄 조건이어야 한다.
-- 해당 사업장의 승인된 활성 근무자 전원이 근무 불가 조건을 제출해야 생성할 수 있다.
+- 자동 스케줄 생성 시점까지 근무 불가 조건 제출을 완료한 활성 근무자만 생성 대상에 포함한다.
+- 제출하지 않은 근무자는 자동 스케줄 생성 대상에서 제외한다.
+- 제출 완료 근무자가 0명이면 생성할 수 없다.
 - `schedule_preview`는 후보 1건당 row를 만들지 않는다.
 - 가능한 모든 후보는 `preview_data.candidates` 배열 안에 저장한다.
 - `previewNo`, `score`는 DB 컬럼이 아니라 JSON 내부 필드다.
@@ -4786,9 +4806,9 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-4. 확정 스케줄 단건 근무 슬롯 추가 API
+### 18-4. 확정 스케줄 단건 근무 파트 추가 API
 
-사장이 이미 확정된 주간 스케줄 안에서 단건 근무 슬롯(`time_detail`)과 근무자 배정(`confirmed_schedule_assignment`)을 직접 추가한다.
+사장이 이미 확정된 주간 스케줄 안에서 단건 근무 파트(`time_detail`)와 근무자 배정(`confirmed_schedule_assignment`)을 직접 추가한다.
 
 | 항목 | 내용 |
 | --- | --- |
@@ -4842,9 +4862,9 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-5. 확정 스케줄 단건 근무 슬롯 수정 API
+### 18-5. 확정 스케줄 단건 근무 파트 수정 API
 
-사장이 확정된 근무 슬롯을 수정한다. 수정은 기존 `time_detail`과 해당 활성 확정 배정을 `DELETED` 처리한 뒤, 요청 값으로 새 `time_detail`과 새 확정 배정을 생성하는 방식이다.
+사장이 확정된 근무 파트를 수정한다. 수정은 기존 `time_detail`과 해당 활성 확정 배정을 `DELETED` 처리한 뒤, 요청 값으로 새 `time_detail`과 새 확정 배정을 생성하는 방식이다.
 
 | 항목 | 내용 |
 | --- | --- |
@@ -4896,9 +4916,9 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-6. 확정 스케줄 단건 근무 슬롯 삭제 API
+### 18-6. 확정 스케줄 단건 근무 파트 삭제 API
 
-사장이 확정된 근무 슬롯을 삭제한다. 해당 `time_detail`과 그 슬롯에 묶인 활성 확정 배정을 `DELETED` 처리한다.
+사장이 확정된 근무 파트를 삭제한다. 해당 `time_detail`과 그 근무 파트에 묶인 활성 확정 배정을 `DELETED` 처리한다.
 
 | 항목 | 내용 |
 | --- | --- |
@@ -4924,7 +4944,7 @@ Authorization: Bearer {accessToken}
 | 400 | 4001 | 요청 날짜가 확정 주간 스케줄 기간에 포함되지 않음, 시간 범위 오류, 근무자 중복 |
 | 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
 | 403 | 4003 | OWNER가 아니거나 해당 사업장의 소유자가 아님 |
-| 404 | 4004 | 사업장, 확정 주간 스케줄, 근무 슬롯을 찾을 수 없음 |
+| 404 | 4004 | 사업장, 확정 주간 스케줄, 근무 파트를 찾을 수 없음 |
 | 409 | 4005 | 같은 날짜에 동일한 근무 파트 번호가 이미 존재함 |
 
 ---
@@ -5130,3 +5150,269 @@ Authorization: Bearer {accessToken}
 | 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
 | 403 | 4003 | OWNER가 아니거나 접근 권한 없음 |
 | 404 | 4004 | 사업장을 찾을 수 없음 |
+
+---
+
+## 스케줄 조건/근무 불가 제출 최신 정책
+
+### 스케줄 조건 생성 dueDate 정책
+
+- `POST /api/work-places/{workPlaceId}/schedule-conditions` 요청에는 `dueDate`가 필수입니다.
+- `dueDate`는 `LocalDate` 문자열이며 예시는 `2026-06-21` 형식입니다.
+- `dueDate`는 오늘 날짜 이상이어야 합니다. 오늘 날짜는 허용됩니다.
+- `dueDate`는 생성 대상 주차의 시작일 전까지만 설정할 수 있습니다. 예를 들어 다음 주 월요일 스케줄 조건이라면 전날 일요일까지 허용됩니다.
+- 응답의 `dueDate`도 `LocalDate` 형식으로 내려갑니다.
+
+### 스케줄 조건 초기화 API
+
+| 항목 | 값 |
+| --- | --- |
+| Method | `DELETE` |
+| URL | `/api/work-places/{workPlaceId}/schedule-conditions/{weekScheduleId}` |
+| 인증 | 필요 |
+| 권한 | OWNER |
+| 성공 응답 | `204 No Content` |
+
+#### 처리 규칙
+
+- 사장 본인의 사업장에 속한 활성 스케줄 조건만 초기화할 수 있습니다.
+- 초기화 시 `week_schedule.status`는 `DELETED`로 변경되고 `deleted_at`이 기록됩니다.
+- 초기화된 스케줄 조건은 조회/제출/자동 생성 대상에서 제외됩니다.
+- 초기화 후 같은 다음 주차 스케줄 조건을 다시 생성할 수 있습니다.
+
+#### 주요 오류
+
+| HTTP Status | Code | 상황 |
+| --- | --- | --- |
+| 401 | 4001 | 인증 정보가 없거나 올바르지 않음 |
+| 403 | 4003 | 해당 사업장의 사장이 아님 |
+| 404 | 4004 | 사업장 또는 활성 스케줄 조건을 찾을 수 없음 |
+
+### 근무 불가 시간 제출 마감 정책
+
+- `POST /api/work-places/{workPlaceId}/worker-select`는 요청한 `weekScheduleId`의 `dueDate`가 지난 경우 제출할 수 없습니다.
+- 마감 이후 제출 시 `400 Bad Request`와 `4000` 코드가 반환됩니다.
+- 마감 이후 근무자가 뒤늦게 제출해야 한다면, 사장이 스케줄 조건을 초기화하고 조건 생성부터 다시 진행해야 합니다.
+
+### 자동 스케줄 생성 대상 정책
+
+- `POST /api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs`는 해당 스케줄 조건에 근무 불가 제출을 완료한 활성 근무자만 대상으로 자동 스케줄을 생성합니다.
+- 제출하지 않은 근무자는 자동 스케줄 생성 대상에서 제외됩니다.
+- 제출 완료 근무자가 0명인 경우 `409 Conflict`가 반환됩니다.
+
+---
+
+## 19. 교대/대타 요청 API
+
+확정된 근무 배정(`confirmed_schedule_assignment`)을 기준으로 근무자가 교대 또는 대타를 요청하고, 대상 근무자 응답 후 사장이 최종 승인/거절하는 기능이다.
+
+### 공통 정책
+
+- 모든 URL은 `/api/*` 규칙을 따른다.
+- 근무자 요청 API는 `WORKER` 권한이 필요하다.
+- 사장 처리/조회 API는 `OWNER` 권한이 필요하다.
+- 요청자와 대상자는 모두 해당 사업장의 승인된 활성 근무자여야 한다.
+- 요청자는 본인의 활성 확정 근무 배정만 교대/대타 요청할 수 있다.
+- 이미 지난 근무는 교대/대타 요청할 수 없다.
+- 같은 확정 근무 배정에 대해 `REQUESTED`, `ACCEPTED_BY_TARGET` 상태의 요청이 있으면 중복 요청할 수 없다.
+- 요청자는 대상 근무자가 응답하기 전(`REQUESTED`)까지만 취소할 수 있다.
+- 이미 수락/거절/승인/취소된 요청은 재처리할 수 없다.
+- 대상 근무자가 수락해야 사장이 최종 승인/거절할 수 있다.
+- 사장이 최종 승인하면 기존 배정 row는 `DELETED` 처리되고, 변경 결과가 새 활성 배정 row로 추가된다.
+- 주요 상태 변경 시 앱 내부 알림 및 FCM 발송 대상 알림이 생성된다.
+
+### 상태 값
+
+| status | 설명 |
+| --- | --- |
+| `REQUESTED` | 요청자가 교대/대타 요청을 생성한 상태 |
+| `ACCEPTED_BY_TARGET` | 대상 근무자가 요청을 수락한 상태 |
+| `REJECTED_BY_TARGET` | 대상 근무자가 요청을 거절한 상태 |
+| `APPROVED` | 사장이 최종 승인하여 확정 스케줄에 반영된 상태 |
+| `REJECTED_BY_OWNER` | 사장이 최종 거절한 상태 |
+| `CANCELED` | 요청자가 대상 근무자 응답 전 취소한 상태 |
+
+### 19-1. 대타 요청 생성 API
+
+A 근무자가 자신의 확정 근무를 B 근무자에게 넘기기 위해 요청한다. B는 해당 날짜/시간에 기존 활성 배정이 없어야 한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/substitute` |
+| 권한 | `WORKER` |
+| 성공 응답 | `201 Created` |
+
+```json
+{
+  "requestAssignmentId": 10,
+  "targetMemberId": 3,
+  "reason": "개인 일정으로 대타 요청합니다."
+}
+```
+
+### 19-2. 교대 요청 생성 API
+
+A 근무자와 B 근무자가 서로의 확정 근무를 바꾸기 위해 요청한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/shift-swap` |
+| 권한 | `WORKER` |
+| 성공 응답 | `201 Created` |
+
+```json
+{
+  "requestAssignmentId": 10,
+  "targetAssignmentId": 11,
+  "reason": "오후 근무와 교대 요청합니다."
+}
+```
+
+### 생성/상태 변경 응답 예시
+
+```json
+{
+  "workChangeRequestId": 1,
+  "workPlaceId": 1,
+  "requestType": "SUBSTITUTE",
+  "status": "REQUESTED",
+  "requesterMemberId": 2,
+  "targetMemberId": 3,
+  "requestAssignmentId": 10,
+  "targetAssignmentId": null,
+  "reason": "개인 일정으로 대타 요청합니다.",
+  "targetRespondedAt": null,
+  "processedByMemberId": null,
+  "processedAt": null,
+  "canceledAt": null,
+  "createdAt": "2026-07-04T17:48:20.288"
+}
+```
+
+### 19-3. 근무자 요청 목록 조회 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `GET` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests?scope=SENT&page=0&size=20` |
+| 권한 | `WORKER` |
+
+| Query | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| scope | String | `SENT` | `SENT`, `RECEIVED`, `ALL` |
+| page | Integer | `0` | 0 이상 |
+| size | Integer | `20` | 1 이상 100 이하 |
+
+### 19-4. 사장 요청 목록 조회 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `GET` |
+| URL | `/api/work-places/{workPlaceId}/owner/work-change-requests?page=0&size=20` |
+| 권한 | `OWNER` |
+
+### 목록 응답 예시
+
+```json
+{
+  "content": [
+    {
+      "workChangeRequestId": 1,
+      "workPlaceId": 1,
+      "requestType": "SUBSTITUTE",
+      "status": "REQUESTED",
+      "requesterMemberId": 2,
+      "targetMemberId": 3,
+      "requestAssignmentId": 10,
+      "targetAssignmentId": null,
+      "reason": "개인 일정으로 대타 요청합니다.",
+      "targetRespondedAt": null,
+      "processedByMemberId": null,
+      "processedAt": null,
+      "canceledAt": null,
+      "createdAt": "2026-07-04T17:48:20.288"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+### 19-5. 대상 근무자 수락 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/{requestId}/accept` |
+| 권한 | `WORKER` |
+
+- 요청의 `targetMemberId`와 로그인 근무자가 같아야 한다.
+- `REQUESTED` 상태에서만 수락할 수 있다.
+- 성공 시 상태는 `ACCEPTED_BY_TARGET`가 된다.
+
+### 19-6. 대상 근무자 거절 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/{requestId}/reject` |
+| 권한 | `WORKER` |
+
+```json
+{
+  "reason": "해당 시간에는 근무가 어렵습니다."
+}
+```
+
+### 19-7. 요청자 취소 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `DELETE` |
+| URL | `/api/work-places/{workPlaceId}/work-change-requests/{requestId}` |
+| 권한 | `WORKER` |
+
+- 요청의 `requesterMemberId`와 로그인 근무자가 같아야 한다.
+- `REQUESTED` 상태에서만 취소할 수 있다.
+- 성공 시 상태는 `CANCELED`가 된다.
+
+### 19-8. 사장 최종 승인 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/owner/work-change-requests/{requestId}/approve` |
+| 권한 | `OWNER` |
+
+- 요청 사업장의 소유자만 승인할 수 있다.
+- `ACCEPTED_BY_TARGET` 상태에서만 승인할 수 있다.
+- 대타 승인 시 요청자의 기존 배정은 `DELETED` 처리되고 대상 근무자의 새 활성 배정이 생성된다.
+- 교대 승인 시 양쪽 기존 배정은 `DELETED` 처리되고 서로 바뀐 새 활성 배정이 생성된다.
+
+### 19-9. 사장 최종 거절 API
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | `POST` |
+| URL | `/api/work-places/{workPlaceId}/owner/work-change-requests/{requestId}/reject` |
+| 권한 | `OWNER` |
+
+```json
+{
+  "reason": "이번 주 근무표 확정 이후 변경이 어렵습니다."
+}
+```
+
+### 주요 오류
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4000/4001 | 요청 필드 누락, 페이지 파라미터 오류, 자기 자신에게 요청, 지난 근무 요청 |
+| 401 | 4002 | 인증 정보가 없거나 올바르지 않음 |
+| 403 | 4003 | 권한 없음, 사업장 소속 승인 근무자가 아님, 요청 처리 주체가 아님 |
+| 404 | 4004 | 사업장, 확정 근무 배정, 교대/대타 요청을 찾을 수 없음 |
+| 409 | 4005 | 대상 근무자가 해당 시간에 이미 근무 중, 처리 중인 중복 요청, 이미 처리된 요청 |

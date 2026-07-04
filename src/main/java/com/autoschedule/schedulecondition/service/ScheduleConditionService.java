@@ -18,6 +18,7 @@ import com.autoschedule.workplace.repository.WorkPlaceRepository;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.time.temporal.WeekFields;
 import java.util.*;
@@ -58,17 +59,16 @@ public class ScheduleConditionService {
 
         LocalDate today = LocalDate.now(); // 오늘 일자를 가져오는 코드
 
-        // 마감일값 제한
+        // 다음 주 시작일 전날(일요일)을 최대 마감일로 제한
         LocalDate nextMonday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         LocalDate maxDueDate = nextMonday.minusDays(1);
-        if (request.dueDate().isBefore(today)) {
-            throw new ApiException(ErrorCode.VALIDATION_FAILED, "마감일은 오늘 이후여야 합니다.");
-        }
-        if (request.dueDate().isAfter(maxDueDate)) {
-            throw new ApiException(ErrorCode.VALIDATION_FAILED, "마감일은 이번 주 일요일을 넘을 수 없습니다.");
-        }
-
         LocalDate dueDate = request.dueDate();
+        if (dueDate.isBefore(today)) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "제출 마감일은 오늘 이상이어야 합니다.");
+        }
+        if (dueDate.isAfter(maxDueDate)) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "제출 마감일은 다음 주 시작 전까지만 설정할 수 있습니다.");
+        }
 
         validateNextWeekScheduleNotDuplicated(workPlace.getId(), today);
 
@@ -78,7 +78,7 @@ public class ScheduleConditionService {
                     WeekSchedule.create(
                             workPlace, // 사업장 id
                             createNextWeekScheduleName(today), // 오늘 일자를 기준으로 다음주 일자에 대한 '0월 0주차' 형태로 변형해서 저장시킴
-                            dueDate,   // today.plusDays(3) 대신 계산된 dueDate 사용
+                            dueDate,   // 사장이 직접 지정한 제출 마감일
                             request.workPlaceOpenTime(),
                             request.workPlaceCloseTime(),
                             request.minPersonalWorkCount(),
@@ -122,6 +122,24 @@ public class ScheduleConditionService {
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.CONFLICT, "이미 생성된 다음 주 스케줄 조건이 있습니다.");
         }
+    }
+
+    /**
+     * 사장이 생성한 스케줄 조건을 초기화한다.
+     */
+    @Transactional
+    public void deleteScheduleCondition(Long ownerMemberId, Long workPlaceId, Long weekScheduleId) {
+        Member owner = findActiveMember(ownerMemberId);
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
+        WeekSchedule weekSchedule = weekScheduleRepository
+                .findByIdAndWorkPlaceIdAndStatusAndDeletedAtIsNull(
+                        weekScheduleId,
+                        workPlace.getId(),
+                        WeekScheduleStatus.ACTIVE
+                )
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "스케줄 조건을 찾을 수 없습니다."));
+
+        weekSchedule.markDeleted(LocalDateTime.now());
     }
 
     /**

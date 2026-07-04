@@ -757,3 +757,49 @@ CREATE INDEX `idx_confirmed_assignment_week_worker_status_deleted`
 
 CREATE INDEX `idx_confirmed_assignment_work_place_status_deleted`
     ON `confirmed_schedule_assignment` (`work_place_id`, `status`, `deleted_at`);
+
+CREATE TABLE `work_change_request`
+(
+    `work_change_request_id` BIGINT       NOT NULL AUTO_INCREMENT,
+    `work_place_id`          BIGINT       NOT NULL,
+    `requester_member_id`    BIGINT       NOT NULL,
+    `target_member_id`       BIGINT       NOT NULL,
+    `request_type`           VARCHAR(30)  NOT NULL,
+    `request_assignment_id`  BIGINT       NOT NULL,
+    `target_assignment_id`   BIGINT       NULL,
+    `reason`                 VARCHAR(500) NOT NULL,
+    `status`                 VARCHAR(30)  NOT NULL,
+    `target_responded_at`    DATETIME     NULL,
+    `target_rejection_reason` VARCHAR(500) NULL,
+    `processed_by_member_id` BIGINT       NULL,
+    `processed_at`           DATETIME     NULL,
+    `owner_rejection_reason` VARCHAR(500) NULL,
+    `canceled_at`            DATETIME     NULL,
+    `created_at`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `deleted_at`             DATETIME     NULL,
+
+    PRIMARY KEY (`work_change_request_id`),
+
+    CONSTRAINT `fk_work_change_request_request_assignment`
+        FOREIGN KEY (`request_assignment_id`)
+            REFERENCES `confirmed_schedule_assignment` (`confirmed_schedule_assignment_id`),
+
+    CONSTRAINT `fk_work_change_request_target_assignment`
+        FOREIGN KEY (`target_assignment_id`)
+            REFERENCES `confirmed_schedule_assignment` (`confirmed_schedule_assignment_id`)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX `idx_work_change_request_place_status_created`
+    ON `work_change_request` (`work_place_id`, `status`, `created_at`, `work_change_request_id`);
+
+CREATE INDEX `idx_work_change_request_requester_status_created`
+    ON `work_change_request` (`work_place_id`, `requester_member_id`, `status`, `created_at`, `work_change_request_id`);
+
+CREATE INDEX `idx_work_change_request_target_status_created`
+    ON `work_change_request` (`work_place_id`, `target_member_id`, `status`, `created_at`, `work_change_request_id`);
+
+CREATE INDEX `idx_work_change_request_assignment_status`
+    ON `work_change_request` (`request_assignment_id`, `target_assignment_id`, `status`);

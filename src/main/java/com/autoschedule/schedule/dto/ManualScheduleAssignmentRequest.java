@@ -10,7 +10,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 /**
- * 확정 스케줄의 단건 근무 슬롯 추가/수정 요청 값을 검증한다.
+ * 확정 스케줄의 단건 근무 파트 추가/수정 요청 값을 검증한다.
  */
 public record ManualScheduleAssignmentRequest(
 

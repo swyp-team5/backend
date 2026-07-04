@@ -92,7 +92,7 @@ public class ScheduleGenerationController {
     }
 
     /**
-     * 사장이 확정된 주간 스케줄에 단건 근무 슬롯과 배정을 추가한다.
+     * 사장이 확정된 주간 스케줄에 단건 근무 파트와 배정을 추가한다.
      */
     @OwnerOnly
     @ResponseStatus(HttpStatus.CREATED)
@@ -112,7 +112,7 @@ public class ScheduleGenerationController {
     }
 
     /**
-     * 사장이 확정된 주간 스케줄의 단건 근무 슬롯과 배정을 수정한다.
+     * 사장이 확정된 주간 스케줄의 단건 근무 파트와 배정을 수정한다.
      */
     @OwnerOnly
     @PutMapping("/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/time-details/{timeDetailId}/assignments")
@@ -133,7 +133,7 @@ public class ScheduleGenerationController {
     }
 
     /**
-     * 사장이 확정된 주간 스케줄의 단건 근무 슬롯과 배정을 삭제한다.
+     * 사장이 확정된 주간 스케줄의 단건 근무 파트와 배정을 삭제한다.
      */
     @OwnerOnly
     @DeleteMapping("/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/time-details/{timeDetailId}/assignments")

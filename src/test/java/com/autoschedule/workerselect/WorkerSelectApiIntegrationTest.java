@@ -196,6 +196,25 @@ class WorkerSelectApiIntegrationTest {
     }
 
     /**
+     * 제출 마감 기한이 지난 주간 스케줄에는 근무 불가능 타임을 제출할 수 없다.
+     */
+    @Test
+    void selectWorkerUnavailable_failsWhenDueDatePassed() throws Exception {
+        jdbcTemplate.update(
+                "update week_schedule set due_date = ? where week_schedule_id = ?",
+                LocalDate.now().minusDays(1),
+                weekSchedule.getId()
+        );
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithTimeDetails(List.of(timeDetail.getId()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
      * 제출 후 worker_select_submission에 제출 현황이, worker_unavailable_time_detail에 타임 정보가 저장된다.
      */
     @Test
@@ -631,6 +650,13 @@ class WorkerSelectApiIntegrationTest {
      * 테스트 격리를 위해 관련 테이블을 참조 순서에 맞게 삭제한다.
      */
     private void cleanupDatabase() {
+        jdbcTemplate.update("delete from notification_delivery");
+        jdbcTemplate.update("delete from notification");
+        jdbcTemplate.update("delete from work_change_request");
+        jdbcTemplate.update("delete from confirmed_schedule_assignment");
+        jdbcTemplate.update("delete from confirmed_week_schedule");
+        jdbcTemplate.update("delete from schedule_preview");
+        jdbcTemplate.update("delete from schedule_generation_run");
         jdbcTemplate.update("delete from worker_unavailable_time_detail");
         jdbcTemplate.update("delete from worker_select_submission");
         jdbcTemplate.update("delete from time_detail");

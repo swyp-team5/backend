@@ -201,7 +201,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 모든 근무자가 제출을 완료하면 사장은 자동 스케줄을 생성하고 JSON 미리보기 후보를 조회할 수 있다.
+     * 제출 완료 근무자 기준으로 사장은 자동 스케줄을 생성하고 JSON 미리보기 후보를 조회할 수 있다.
      */
     @Test
     void generateSchedulePreview_success() throws Exception {
@@ -233,6 +233,30 @@ class ScheduleGenerationApiIntegrationTest {
                 .andExpect(jsonPath("$.scheduleGenerationRunId").value(run.getId()))
                 .andExpect(jsonPath("$.candidateCount").value(1))
                 .andExpect(jsonPath("$.previewData.candidates[0].candidateNo").value(1));
+    }
+
+    /**
+     * 자동 스케줄 생성은 승인 근무자 전체가 아니라 제출을 완료한 활성 근무자만 대상으로 수행한다.
+     */
+    @Test
+    void generateSchedulePreview_usesOnlySubmittedWorkers() throws Exception {
+        jdbcTemplate.update(
+                "update week_schedule set max_personal_work_count = ? where week_schedule_id = ?",
+                2,
+                weekSchedule.getId()
+        );
+        submitWorkerUnavailable(workerA, List.of());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.candidateCount").value(1))
+                .andExpect(jsonPath("$.status").value("GENERATED"));
+
+        SchedulePreview preview = schedulePreviewRepository.findAll().get(0);
+        assertThat(preview.getPreviewData()).contains("\"workerMemberIds\": [" + workerA.getId() + "]");
+        assertThat(preview.getPreviewData()).doesNotContain("\"workerMemberIds\": [" + workerB.getId());
     }
 
     /**
@@ -277,10 +301,10 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 모든 승인 근무자가 제출하지 않은 상태에서는 자동 스케줄을 생성할 수 없다.
+     * 제출 완료 근무자만으로 스케줄 조건을 만족할 수 없으면 자동 스케줄을 생성할 수 없다.
      */
     @Test
-    void generateSchedulePreview_failsWhenAnyWorkerNotSubmitted() throws Exception {
+    void generateSchedulePreview_failsWhenSubmittedWorkersCannotSatisfySchedule() throws Exception {
         submitWorkerUnavailable(workerA, List.of(evening));
 
         mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
@@ -291,7 +315,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 해당 사업장의 사장이 아니면 자동 스케줄 생성을 요청할 수 없다.
+     * 비활성 크루는 자동 스케줄 생성 대상 근무자에서 제외한다.
      */
     @Test
     void generateSchedulePreview_excludesInactiveCrewFromRequiredSubmitters() throws Exception {
@@ -417,7 +441,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 확정된 주간 스케줄의 날짜에 대해서는 사장이 직접 단건 근무 슬롯을 추가할 수 있다.
+     * 확정된 주간 스케줄의 날짜에 대해서는 사장이 직접 단건 근무 파트를 추가할 수 있다.
      */
     @Test
     void createManualAssignment_successForConfirmedScheduleDate() throws Exception {
@@ -458,7 +482,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 확정된 주간 스케줄에 포함되지 않는 날짜에는 단건 근무 슬롯을 추가할 수 없다.
+     * 확정된 주간 스케줄에 포함되지 않는 날짜에는 단건 근무 파트를 추가할 수 없다.
      */
     @Test
     void createManualAssignment_failsWhenWorkDateOutsideConfirmedWeekSchedule() throws Exception {
@@ -484,7 +508,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 사장이 확정된 근무 슬롯을 수정하면 기존 time_detail과 배정은 삭제 처리되고 새 time_detail과 배정이 생성된다.
+     * 사장이 확정된 근무 파트를 수정하면 기존 time_detail과 배정은 삭제 처리되고 새 time_detail과 배정이 생성된다.
      */
     @Test
     void updateManualAssignment_replacesTimeDetailAndAssignments() throws Exception {
@@ -536,7 +560,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 확정된 근무 슬롯을 수정할 때도 요청 날짜는 확정 주간 스케줄 안에 포함되어야 한다.
+     * 확정된 근무 파트를 수정할 때도 요청 날짜는 확정 주간 스케줄 안에 포함되어야 한다.
      */
     @Test
     void updateManualAssignment_failsWhenWorkDateOutsideConfirmedWeekSchedule() throws Exception {
@@ -562,7 +586,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 사장이 확정된 근무 슬롯을 삭제하면 해당 time_detail과 확정 배정이 삭제 처리된다.
+     * 사장이 확정된 근무 파트를 삭제하면 해당 time_detail과 확정 배정도 삭제 처리된다.
      */
     @Test
     void deleteManualAssignment_marksTimeDetailAndAssignmentsDeleted() throws Exception {
@@ -609,7 +633,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 사장은 자신의 사업장의 주간 확정 스케줄을 날짜와 타임별 근무자 목록으로 조회한다.
+     * 사장은 자신의 사업장의 주간 확정 스케줄을 날짜와 근무 파트별 근무자 목록으로 조회한다.
      */
     @Test
     void getOwnerWeeklyConfirmedSchedules_returnsWorkPlaceAssignmentsGroupedByDayAndTimeDetail() throws Exception {
@@ -638,7 +662,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 사장은 임의 기간의 사업장 확정 스케줄을 날짜와 타임별 근무자 목록으로 조회한다.
+     * 사장은 임의 기간의 사업장 확정 스케줄을 날짜와 근무 파트별 근무자 목록으로 조회한다.
      */
     @Test
     void getOwnerConfirmedSchedules_returnsWorkPlaceAssignmentsForDateRange() throws Exception {
@@ -663,7 +687,7 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 근무자별 불가 시간 제출 데이터를 저장한다.
+     * 근무자별 근무 불가 시간 제출 데이터를 저장한다.
      */
     private void submitWorkerUnavailable(Member worker, List<TimeDetail> unavailableTimeDetails) {
         WorkerSelectSubmission submission = workerSelectSubmissionRepository.save(

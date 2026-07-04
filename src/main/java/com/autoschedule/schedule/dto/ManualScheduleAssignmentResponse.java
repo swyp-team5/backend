@@ -6,7 +6,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 /**
- * 확정 스케줄 단건 근무 슬롯 추가/수정 결과를 전달한다.
+ * 확정 스케줄 단건 근무 파트 추가/수정 결과를 전달한다.
  */
 public record ManualScheduleAssignmentResponse(
         Long confirmedWeekScheduleId,

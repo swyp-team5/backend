@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 public final class TestDatabaseCleaner {
 
     private static final String[] TABLES = {
+            "work_change_request",
             "confirmed_schedule_assignment",
             "confirmed_week_schedule",
             "schedule_preview",

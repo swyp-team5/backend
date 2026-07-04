@@ -83,6 +83,7 @@ public class WeekSchedule extends BaseEntity {
      */
     public void markDeleted(LocalDateTime deletedAt) {
         this.status = WeekScheduleStatus.DELETED;
+        this.weekScheduleName = "DELETED-" + id;
         this.deletedAt = deletedAt;
     }
 }

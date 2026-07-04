@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS `work_change_request`;
 DROP TABLE IF EXISTS `confirmed_schedule_assignment`;
 DROP TABLE IF EXISTS `confirmed_week_schedule`;
 DROP TABLE IF EXISTS `schedule_preview`;
