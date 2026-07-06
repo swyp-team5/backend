@@ -53,6 +53,24 @@ public class ScheduleGenerationController {
     }
 
     /**
+     * 사장이 기존 자동 스케줄 생성 결과를 삭제 처리하고 새 미리보기를 다시 생성한다.
+     */
+    @OwnerOnly
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs/regenerate")
+    public ScheduleGenerationRunResponse regenerateSchedulePreview(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
+            @PathVariable Long weekScheduleId
+    ) {
+        return scheduleGenerationService.regenerateSchedulePreview(
+                principal.memberId(),
+                workPlaceId,
+                weekScheduleId
+        );
+    }
+
+    /**
      * 사장이 자동 생성 실행 이력에 속한 미리보기 JSON을 조회한다.
      */
     @OwnerOnly

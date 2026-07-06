@@ -106,6 +106,7 @@ public class ScheduleGenerationService {
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
+        validateNoActiveGeneratedRun(weekSchedule.getId());
 
         List<Day> days = dayRepository.findByWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByDateAscIdAsc(
                 weekSchedule.getId(),
@@ -181,6 +182,23 @@ public class ScheduleGenerationService {
         ));
 
         return ScheduleGenerationRunResponse.from(run, preview);
+    }
+
+    /**
+     * 기존 자동 생성 결과를 삭제 처리한 뒤 같은 조건으로 새 미리보기를 다시 생성한다.
+     */
+    @Transactional
+    public ScheduleGenerationRunResponse regenerateSchedulePreview(
+            Long ownerMemberId,
+            Long workPlaceId,
+            Long weekScheduleId
+    ) {
+        Member owner = findActiveMember(ownerMemberId);
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
+        WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
+
+        markActiveGeneratedRunsAndPreviewsDeleted(weekSchedule.getId());
+        return generateSchedulePreview(ownerMemberId, workPlaceId, weekScheduleId);
     }
 
     /**
@@ -834,6 +852,45 @@ public class ScheduleGenerationService {
                         ConfirmedWeekScheduleStatus.ACTIVE
                 )
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "확정된 주간 스케줄을 찾을 수 없습니다."));
+    }
+
+    /**
+     * 같은 주간 스케줄에 사용 가능한 자동 생성 결과가 이미 있으면 일반 생성을 막는다.
+     */
+    private void validateNoActiveGeneratedRun(Long weekScheduleId) {
+        boolean exists = scheduleGenerationRunRepository.existsByWeekSchedule_IdAndStatusAndDeletedAtIsNull(
+                weekScheduleId,
+                ScheduleGenerationRunStatus.GENERATED
+        );
+        if (exists) {
+            throw new ApiException(ErrorCode.CONFLICT, "이미 생성된 자동 스케줄 미리보기가 있습니다. 재생성 API를 사용해주세요.");
+        }
+    }
+
+    /**
+     * 재생성 전에 기존 활성 자동 생성 이력과 미리보기 스냅샷을 삭제 처리한다.
+     */
+    private void markActiveGeneratedRunsAndPreviewsDeleted(Long weekScheduleId) {
+        List<ScheduleGenerationRun> activeRuns =
+                scheduleGenerationRunRepository.findByWeekSchedule_IdAndStatusAndDeletedAtIsNull(
+                        weekScheduleId,
+                        ScheduleGenerationRunStatus.GENERATED
+                );
+        if (activeRuns.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime deletedAt = LocalDateTime.now();
+        List<Long> activeRunIds = activeRuns.stream()
+                .map(ScheduleGenerationRun::getId)
+                .toList();
+
+        schedulePreviewRepository.findByScheduleGenerationRun_IdInAndStatusAndDeletedAtIsNull(
+                        activeRunIds,
+                        SchedulePreviewStatus.ACTIVE
+                )
+                .forEach(preview -> preview.markDeleted(deletedAt));
+        activeRuns.forEach(run -> run.markDeleted(deletedAt));
     }
 
     /**

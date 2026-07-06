@@ -319,6 +319,69 @@ class ScheduleGenerationApiIntegrationTest {
         );
     }
 
+    /**
+     * 같은 주간 스케줄에 활성 자동 생성 결과가 이미 있으면 일반 생성 API는 중복 생성을 막는다.
+     */
+    @Test
+    void generateSchedulePreview_failsWhenActiveGeneratedRunAlreadyExists() throws Exception {
+        submitWorkerUnavailable(workerA, List.of(evening));
+        submitWorkerUnavailable(workerB, List.of(morning));
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("4005"));
+
+        assertThat(scheduleGenerationRunRepository.findAll())
+                .hasSize(1)
+                .allSatisfy(run -> assertThat(run.getStatus()).isEqualTo(ScheduleGenerationRunStatus.GENERATED));
+        assertThat(schedulePreviewRepository.findAll()).hasSize(1);
+    }
+
+    /**
+     * 명시적 재생성 API는 기존 활성 run과 preview를 삭제 처리한 뒤 새 run과 preview를 생성한다.
+     */
+    @Test
+    void regenerateSchedulePreview_marksPreviousRunAndPreviewDeletedThenCreatesNewOnes() throws Exception {
+        submitWorkerUnavailable(workerA, List.of(evening));
+        submitWorkerUnavailable(workerB, List.of(morning));
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isCreated());
+
+        ScheduleGenerationRun oldRun = scheduleGenerationRunRepository.findAll().get(0);
+        SchedulePreview oldPreview = schedulePreviewRepository.findAll().get(0);
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs/regenerate",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.scheduleGenerationRunId").isNumber())
+                .andExpect(jsonPath("$.schedulePreviewId").isNumber())
+                .andExpect(jsonPath("$.status").value("GENERATED"));
+
+        List<ScheduleGenerationRun> runs = scheduleGenerationRunRepository.findAll();
+        List<SchedulePreview> previews = schedulePreviewRepository.findAll();
+
+        assertThat(runs).hasSize(2);
+        assertThat(previews).hasSize(2);
+        assertThat(scheduleGenerationRunRepository.findById(oldRun.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleGenerationRunStatus.DELETED);
+        assertThat(scheduleGenerationRunRepository.findById(oldRun.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(schedulePreviewRepository.findById(oldPreview.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(runs)
+                .filteredOn(run -> run.getStatus() == ScheduleGenerationRunStatus.GENERATED)
+                .hasSize(1);
+    }
+
     @Test
     void confirmSchedule_success() throws Exception {
         submitWorkerUnavailable(workerA, List.of(evening));

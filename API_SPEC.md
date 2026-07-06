@@ -4707,10 +4707,46 @@ Authorization: Bearer {accessToken}
 - `schedule_preview`는 후보 1건당 row를 만들지 않는다.
 - 가능한 모든 후보는 `preview_data.candidates` 배열 안에 저장한다.
 - `previewNo`, `score`는 DB 컬럼이 아니라 JSON 내부 필드다.
+- 같은 `weekScheduleId`에 활성 `GENERATED` 자동 생성 결과가 이미 있으면 일반 생성 API는 `409 Conflict`를 반환한다.
+- 이미 생성된 미리보기를 다시 만들려면 `18-2. 자동 스케줄 재생성 API`를 사용한다.
 
 ---
 
-### 18-2. 자동 스케줄 미리보기 조회 API
+### 18-2. 자동 스케줄 재생성 API
+
+기존 활성 자동 스케줄 생성 결과와 미리보기 스냅샷을 삭제 처리한 뒤, 같은 주간 스케줄 조건으로 새 자동 스케줄 미리보기를 생성합니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs/regenerate` |
+| 권한 | OWNER |
+
+#### 성공 응답: 201 Created
+
+```json
+{
+  "scheduleGenerationRunId": 2,
+  "schedulePreviewId": 2,
+  "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "candidateCount": 50,
+  "status": "GENERATED"
+}
+```
+
+#### 정책
+
+- 사장만 호출할 수 있다.
+- 요청자는 해당 사업장의 소유자여야 한다.
+- 기존 활성 `GENERATED` run은 `DELETED` 상태로 변경되고 `deletedAt`이 기록된다.
+- 기존 활성 `schedule_preview`도 `DELETED` 상태로 변경되고 `deletedAt`이 기록된다.
+- 새 생성 과정이 실패하면 같은 트랜잭션 안에서 롤백되어 기존 생성 결과 삭제 처리도 반영되지 않는다.
+- 재생성 결과는 새 `schedule_generation_run`과 새 `schedule_preview`로 저장된다.
+
+---
+
+### 18-3. 자동 스케줄 미리보기 조회 API
 
 | 항목 | 내용 |
 | --- | --- |
@@ -4752,7 +4788,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-3. 주간 스케줄 확정 API
+### 18-4. 주간 스케줄 확정 API
 
 사장이 미리보기 JSON 안의 후보 중 하나를 선택하여 실제 확정 스케줄로 전환한다.
 
@@ -4806,7 +4842,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-4. 확정 스케줄 단건 근무 파트 추가 API
+### 18-5. 확정 스케줄 단건 근무 파트 추가 API
 
 사장이 이미 확정된 주간 스케줄 안에서 단건 근무 파트(`time_detail`)와 근무자 배정(`confirmed_schedule_assignment`)을 직접 추가한다.
 
@@ -4862,7 +4898,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-5. 확정 스케줄 단건 근무 파트 수정 API
+### 18-6. 확정 스케줄 단건 근무 파트 수정 API
 
 사장이 확정된 근무 파트를 수정한다. 수정은 기존 `time_detail`과 해당 활성 확정 배정을 `DELETED` 처리한 뒤, 요청 값으로 새 `time_detail`과 새 확정 배정을 생성하는 방식이다.
 
@@ -4916,7 +4952,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-6. 확정 스케줄 단건 근무 파트 삭제 API
+### 18-7. 확정 스케줄 단건 근무 파트 삭제 API
 
 사장이 확정된 근무 파트를 삭제한다. 해당 `time_detail`과 그 근무 파트에 묶인 활성 확정 배정을 `DELETED` 처리한다.
 
@@ -4949,7 +4985,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-7. 근무자 본인 확정 스케줄 달력 조회 API
+### 18-8. 근무자 본인 확정 스케줄 달력 조회 API
 
 근무자가 본인에게 배정된 확정 근무 일정을 기간 기준으로 조회한다. 지난 확정 근무 일정, 이번 주 진행 중 일정, 다음 주 확정 일정 모두 같은 API로 조회한다.
 
@@ -5001,7 +5037,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-8. 사장용 사업장 기간 확정 스케줄 조회 API
+### 18-9. 사장용 사업장 기간 확정 스케줄 조회 API
 
 사장이 자신의 사업장의 확정 근무표를 임의 기간 기준으로 조회한다. 사장 홈, 근무표 화면, 월 단위/주 단위 근무자 스케줄 조회에서 공통으로 사용할 수 있다.
 
@@ -5078,7 +5114,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 18-9. 사장용 사업장 주간 확정 스케줄 조회 API
+### 18-10. 사장용 사업장 주간 확정 스케줄 조회 API
 
 사장이 자신의 사업장의 주간 확정 근무표를 날짜와 근무 타임 기준으로 조회한다. 홈 화면의 이번 주 근무자 스케줄 조회에 사용한다.
 

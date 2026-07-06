@@ -2,6 +2,8 @@ package com.autoschedule.schedule.repository;
 
 import com.autoschedule.schedule.domain.SchedulePreview;
 import com.autoschedule.schedule.domain.SchedulePreviewStatus;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -26,6 +28,14 @@ public interface SchedulePreviewRepository extends JpaRepository<SchedulePreview
     Optional<SchedulePreview> findFirstByScheduleGenerationRun_IdAndWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByIdDesc(
             Long scheduleGenerationRunId,
             Long weekScheduleId,
+            SchedulePreviewStatus status
+    );
+
+    /**
+     * 여러 자동 생성 이력에 속한 활성 미리보기 스냅샷을 조회한다.
+     */
+    List<SchedulePreview> findByScheduleGenerationRun_IdInAndStatusAndDeletedAtIsNull(
+            Collection<Long> scheduleGenerationRunIds,
             SchedulePreviewStatus status
     );
 }
