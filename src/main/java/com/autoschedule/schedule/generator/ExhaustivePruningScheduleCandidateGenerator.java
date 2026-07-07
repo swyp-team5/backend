@@ -51,13 +51,14 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
         int minPersonalWorkCount = command.weekSchedule().getMinPersonalWorkCount();
         int maxPersonalWorkCount = command.weekSchedule().getMaxPersonalWorkCount();
 
-        if (isGloballyImpossible(
+        String globalImpossibleReason = diagnoseGlobalImpossibleReason(
             originalTimeDetails,
             workerCount,
             minPersonalWorkCount,
             maxPersonalWorkCount
-        )) {
-            return new ScheduleCandidateGenerationResult(ALGORITHM_VERSION, List.of());
+        );
+        if (globalImpossibleReason != null) {
+            return ScheduleCandidateGenerationResult.failure(ALGORITHM_VERSION, globalImpossibleReason);
         }
 
         long[] workerMemberIds = toLongArray(sortedWorkerMemberIds);
@@ -71,7 +72,11 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
 
         for (Slot slot : slots) {
             if (Long.bitCount(slot.availableWorkerMask()) < slot.requiredCount()) {
-                return new ScheduleCandidateGenerationResult(ALGORITHM_VERSION, List.of());
+                return ScheduleCandidateGenerationResult.failure(
+                    ALGORITHM_VERSION,
+                    "근무 불가 조건 때문에 '" + describeTimeDetail(slot.timeDetail())
+                        + "' 시간대에 필요한 인원을 배정할 수 없습니다."
+                );
             }
         }
 
@@ -84,8 +89,9 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
             maxPersonalWorkCount
         );
 
-        if (!canStillSatisfyAllConstraints(context)) {
-            return new ScheduleCandidateGenerationResult(ALGORITHM_VERSION, List.of());
+        String initialConstraintFailureReason = diagnoseInitialConstraintFailure(context);
+        if (initialConstraintFailureReason != null) {
+            return ScheduleCandidateGenerationResult.failure(ALGORITHM_VERSION, initialConstraintFailureReason);
         }
 
         search(0, context);
@@ -98,7 +104,21 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
             numberedCandidates.add(sortedCandidates.get(index).withCandidateNo(index + 1));
         }
 
-        return new ScheduleCandidateGenerationResult(ALGORITHM_VERSION, numberedCandidates);
+        if (numberedCandidates.isEmpty()) {
+            if (context.visitedNodeCount >= MAX_SEARCH_NODE_COUNT) {
+                return ScheduleCandidateGenerationResult.failure(
+                    ALGORITHM_VERSION,
+                    "스케줄 조합이 너무 많아 자동 생성 탐색 한도를 초과했습니다. 근무 시간대나 필요 인원을 줄여주세요."
+                );
+            }
+
+            return ScheduleCandidateGenerationResult.failure(
+                ALGORITHM_VERSION,
+                "근무자별 최소/최대 근무 횟수와 근무 불가 조건을 동시에 만족하는 조합이 없습니다."
+            );
+        }
+
+        return ScheduleCandidateGenerationResult.success(ALGORITHM_VERSION, numberedCandidates);
     }
 
     /**
@@ -710,18 +730,23 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
         return slots;
     }
 
-    private boolean isGloballyImpossible(
+    /**
+     * DFS 시작 전에 전체 합계만으로 판단 가능한 실패 사유를 진단한다.
+     */
+    private String diagnoseGlobalImpossibleReason(
         List<TimeDetail> timeDetails,
         int workerCount,
         int minPersonalWorkCount,
         int maxPersonalWorkCount
     ) {
         if (workerCount == 0) {
-            return !timeDetails.isEmpty();
+            return timeDetails.isEmpty()
+                ? null
+                : "자동 스케줄을 생성할 제출 완료 근무자가 없습니다.";
         }
 
         if (minPersonalWorkCount > maxPersonalWorkCount) {
-            return true;
+            return "근무자별 최소 근무 횟수가 최대 근무 횟수보다 큽니다.";
         }
 
         int totalRequiredWorkCount = 0;
@@ -733,10 +758,58 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
         int totalMaximumAllowed = workerCount * maxPersonalWorkCount;
 
         if (totalRequiredWorkCount < totalMinimumRequired) {
-            return true;
+            return "전체 필요 근무 횟수가 근무자별 최소 근무 횟수 합계보다 적습니다.";
         }
 
-        return totalRequiredWorkCount > totalMaximumAllowed;
+        if (totalRequiredWorkCount > totalMaximumAllowed) {
+            return "전체 필요 근무 횟수가 근무자별 최대 근무 횟수 합계를 초과합니다.";
+        }
+
+        return null;
+    }
+
+    /**
+     * 초기 슬롯 상태 기준으로 최소/최대 근무 횟수 충족 가능성을 진단한다.
+     */
+    private String diagnoseInitialConstraintFailure(SearchContext context) {
+        int totalMinimumDeficit = 0;
+        int totalMaximumCapacity = 0;
+
+        for (int workerIndex = 0; workerIndex < context.workerMemberIds.length; workerIndex++) {
+            int remainingAssignableCount = context.remainingAssignableCountByWorker[workerIndex];
+
+            if (remainingAssignableCount < context.minPersonalWorkCount) {
+                return "근무자 " + context.workerMemberIds[workerIndex]
+                    + "번은 근무 불가 조건 때문에 최소 근무 횟수를 채울 수 없습니다.";
+            }
+
+            totalMinimumDeficit += context.minPersonalWorkCount;
+            totalMaximumCapacity += Math.min(context.maxPersonalWorkCount, remainingAssignableCount);
+        }
+
+        if (totalMinimumDeficit > context.remainingRequiredCount) {
+            return "전체 근무 슬롯 수가 근무자별 최소 근무 횟수 합계보다 적습니다.";
+        }
+
+        if (context.remainingRequiredCount > totalMaximumCapacity) {
+            return "근무 불가 조건을 반영하면 근무자별 최대 근무 횟수 안에서 모든 슬롯을 채울 수 없습니다.";
+        }
+
+        return null;
+    }
+
+    /**
+     * 클라이언트가 어떤 시간대에서 실패했는지 알 수 있도록 시간대 설명을 만든다.
+     */
+    private String describeTimeDetail(TimeDetail timeDetail) {
+        return timeDetail.getDay().getDate()
+            + " "
+            + timeDetail.getTimeName()
+            + "("
+            + timeDetail.getStartTime()
+            + "-"
+            + timeDetail.getCloseTime()
+            + ")";
     }
 
     private long[] toLongArray(List<Long> workerMemberIds) {

@@ -123,6 +123,7 @@ public class ScheduleGenerationService {
         List<Long> activeWorkerMemberIds = findActiveWorkerMemberIds(workPlace.getId());
         List<ScheduleCandidate> candidates;
         String algorithmVersion;
+        String failureReason = "조건을 만족하는 스케줄 후보가 없습니다.";
 
         if (normalTimeDetails.isEmpty()) {
             if (activeWorkerMemberIds.isEmpty()) {
@@ -150,6 +151,9 @@ public class ScheduleGenerationService {
                     )
             );
             candidates = generationResult.candidates();
+            if (generationResult.failureReason() != null) {
+                failureReason = generationResult.failureReason();
+            }
             algorithmVersion = randomTimeDetails.isEmpty()
                     ? generationResult.algorithmVersion()
                     : generationResult.algorithmVersion() + RANDOM_SELECT_LIMIT_ALGORITHM_SUFFIX;
@@ -168,9 +172,9 @@ public class ScheduleGenerationService {
                     workPlace.getId(),
                     owner.getId(),
                     algorithmVersion,
-                    "조건을 만족하는 스케줄 후보가 없습니다."
+                    failureReason
             ));
-            throw new ApiException(ErrorCode.CONFLICT, "조건을 만족하는 스케줄 후보가 없습니다.");
+            throw new ApiException(ErrorCode.CONFLICT, failureReason);
         }
 
         ScheduleGenerationRun run = scheduleGenerationRunRepository.save(ScheduleGenerationRun.generated(

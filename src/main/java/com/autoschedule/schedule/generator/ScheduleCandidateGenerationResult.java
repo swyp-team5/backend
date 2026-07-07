@@ -7,6 +7,21 @@ import java.util.List;
  */
 public record ScheduleCandidateGenerationResult(
         String algorithmVersion,
-        List<ScheduleCandidate> candidates
+        List<ScheduleCandidate> candidates,
+        String failureReason
 ) {
+
+    /**
+     * 자동 스케줄 후보 생성 성공 결과를 생성한다.
+     */
+    public static ScheduleCandidateGenerationResult success(String algorithmVersion, List<ScheduleCandidate> candidates) {
+        return new ScheduleCandidateGenerationResult(algorithmVersion, candidates, null);
+    }
+
+    /**
+     * 자동 스케줄 후보를 만들 수 없는 원인을 포함한 실패 결과를 생성한다.
+     */
+    public static ScheduleCandidateGenerationResult failure(String algorithmVersion, String failureReason) {
+        return new ScheduleCandidateGenerationResult(algorithmVersion, List.of(), failureReason);
+    }
 }

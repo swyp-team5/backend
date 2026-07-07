@@ -470,13 +470,43 @@ class ScheduleGenerationApiIntegrationTest {
      */
     @Test
     void generateSchedulePreview_failsWhenSubmittedWorkersCannotSatisfySchedule() throws Exception {
+        jdbcTemplate.update(
+                "update week_schedule set max_personal_work_count = ? where week_schedule_id = ?",
+                2,
+                weekSchedule.getId()
+        );
         submitWorkerUnavailable(workerA, List.of(evening));
 
         mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
                         workPlace.getId(), weekSchedule.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("4005"));
+                .andExpect(jsonPath("$.code").value("4005"))
+                .andExpect(jsonPath("$.message").value(
+                        "근무 불가 조건 때문에 '" + evening.getDay().getDate() + " 마감(18:00-22:00)' 시간대에 필요한 인원을 배정할 수 없습니다."
+                ));
+    }
+
+    /**
+     * 전체 필요 근무 횟수가 제출 완료 근무자의 최대 근무 가능 횟수를 넘으면 원인을 구분해 응답한다.
+     */
+    @Test
+    void generateSchedulePreview_failsWhenRequiredWorkCountExceedsMaximumCapacity() throws Exception {
+        jdbcTemplate.update(
+                "update week_schedule set min_personal_work_count = ?, max_personal_work_count = ? where week_schedule_id = ?",
+                0,
+                0,
+                weekSchedule.getId()
+        );
+        submitWorkerUnavailable(workerA, List.of());
+        submitWorkerUnavailable(workerB, List.of());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("4005"))
+                .andExpect(jsonPath("$.message").value("전체 필요 근무 횟수가 근무자별 최대 근무 횟수 합계를 초과합니다."));
     }
 
     /**
