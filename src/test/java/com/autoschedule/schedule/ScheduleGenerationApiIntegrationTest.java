@@ -43,9 +43,11 @@ import com.autoschedule.workerselect.repository.WorkerUnavailableTimeDetailRepos
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceSize;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -162,6 +164,8 @@ class ScheduleGenerationApiIntegrationTest {
         crewRepository.save(Crew.createWorker(workerA, workPlace));
         workerBCrew = crewRepository.save(Crew.createWorker(workerB, workPlace));
 
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+
         weekSchedule = weekScheduleRepository.save(WeekSchedule.create(
                 workPlace,
                 "2026년 7월 1주차",
@@ -174,12 +178,24 @@ class ScheduleGenerationApiIntegrationTest {
         Day day = dayRepository.save(Day.create(
                 weekSchedule,
                 ScheduleDayName.MONDAY,
-                LocalDate.of(2026, 7, 6),
+                nextMonday,
                 1,
                 1,
                 false,
                 false
         ));
+        for (int plusDays = 1; plusDays < 7; plusDays++) {
+            LocalDate date = nextMonday.plusDays(plusDays);
+            dayRepository.save(Day.create(
+                    weekSchedule,
+                    ScheduleDayName.valueOf(date.getDayOfWeek().name()),
+                    date,
+                    plusDays + 1,
+                    1,
+                    false,
+                    false
+            ));
+        }
         morning = timeDetailRepository.save(TimeDetail.create(
                 day,
                 1,
@@ -274,15 +290,12 @@ class ScheduleGenerationApiIntegrationTest {
                 "worker-c-random@test.com",
                 "01044445555"
         );
-        Day selectLimitDay = dayRepository.save(Day.create(
-                weekSchedule,
-                ScheduleDayName.TUESDAY,
-                LocalDate.of(2026, 7, 7),
-                2,
-                0,
-                false,
-                true
-        ));
+        Day selectLimitDay = dayRepository.findByWeekSchedule_IdAndDateAndStatusAndDeletedAtIsNull(
+                weekSchedule.getId(),
+                morning.getDay().getDate().plusDays(1),
+                com.autoschedule.schedulecondition.domain.DayStatus.ACTIVE
+        ).orElseThrow();
+        jdbcTemplate.update("update day set select_limit_status = true where day_id = ?", selectLimitDay.getId());
         TimeDetail selectLimitTimeDetail = timeDetailRepository.save(TimeDetail.create(
                 selectLimitDay,
                 1,
@@ -380,6 +393,38 @@ class ScheduleGenerationApiIntegrationTest {
         assertThat(runs)
                 .filteredOn(run -> run.getStatus() == ScheduleGenerationRunStatus.GENERATED)
                 .hasSize(1);
+    }
+
+    /**
+     * 자동 스케줄 생성은 현재 날짜 기준 차주 월~일 스케줄 조건에 대해서만 허용한다.
+     */
+    @Test
+    void generateSchedulePreview_failsWhenWeekScheduleIsNotNextWeek() throws Exception {
+        WeekSchedule currentWeekSchedule = createWeekScheduleStartingAt(
+                LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        );
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs",
+                        workPlace.getId(), currentWeekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("자동 스케줄은 다음 주 스케줄 조건으로만 생성할 수 있습니다."));
+    }
+
+    /**
+     * 자동 스케줄 재생성도 현재 날짜 기준 차주 월~일 스케줄 조건에 대해서만 허용한다.
+     */
+    @Test
+    void regenerateSchedulePreview_failsWhenWeekScheduleIsNotNextWeek() throws Exception {
+        WeekSchedule currentWeekSchedule = createWeekScheduleStartingAt(
+                LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        );
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/schedule-generation-runs/regenerate",
+                        workPlace.getId(), currentWeekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("자동 스케줄은 다음 주 스케줄 조건으로만 생성할 수 있습니다."));
     }
 
     @Test
@@ -566,6 +611,7 @@ class ScheduleGenerationApiIntegrationTest {
     @Test
     void createManualAssignment_successForConfirmedScheduleDate() throws Exception {
         ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        LocalDate workDate = morning.getDay().getDate();
 
         mockMvc.perform(post("/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/assignments",
                         workPlace.getId(), confirmed.getId())
@@ -573,7 +619,7 @@ class ScheduleGenerationApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workDate": "2026-07-06",
+                                  "workDate": "%s",
                                   "workPartNo": 3,
                                   "timeName": "야간",
                                   "startTime": "22:00",
@@ -581,10 +627,10 @@ class ScheduleGenerationApiIntegrationTest {
                                   "restTime": 0,
                                   "workerMemberIds": [%d, %d]
                                 }
-                                """.formatted(workerA.getId(), workerB.getId())))
+                                """.formatted(workDate, workerA.getId(), workerB.getId())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.confirmedWeekScheduleId").value(confirmed.getId()))
-                .andExpect(jsonPath("$.workDate").value("2026-07-06"))
+                .andExpect(jsonPath("$.workDate").value(workDate.toString()))
                 .andExpect(jsonPath("$.workPartNo").value(3))
                 .andExpect(jsonPath("$.workerMemberIds.length()").value(2));
 
@@ -607,6 +653,7 @@ class ScheduleGenerationApiIntegrationTest {
     @Test
     void createManualAssignment_failsWhenWorkDateOutsideConfirmedWeekSchedule() throws Exception {
         ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        LocalDate outsideDate = morning.getDay().getDate().plusDays(7);
 
         mockMvc.perform(post("/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/assignments",
                         workPlace.getId(), confirmed.getId())
@@ -614,7 +661,7 @@ class ScheduleGenerationApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workDate": "2026-07-13",
+                                  "workDate": "%s",
                                   "workPartNo": 1,
                                   "timeName": "오픈",
                                   "startTime": "09:00",
@@ -622,7 +669,7 @@ class ScheduleGenerationApiIntegrationTest {
                                   "restTime": 0,
                                   "workerMemberIds": [%d]
                                 }
-                                """.formatted(workerA.getId())))
+                                """.formatted(outsideDate, workerA.getId())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("4001"));
     }
@@ -633,6 +680,7 @@ class ScheduleGenerationApiIntegrationTest {
     @Test
     void updateManualAssignment_replacesTimeDetailAndAssignments() throws Exception {
         ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        LocalDate workDate = morning.getDay().getDate();
 
         mockMvc.perform(put("/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/time-details/{timeDetailId}/assignments",
                         workPlace.getId(), confirmed.getId(), morning.getId())
@@ -640,7 +688,7 @@ class ScheduleGenerationApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workDate": "2026-07-06",
+                                  "workDate": "%s",
                                   "workPartNo": 4,
                                   "timeName": "수정타임",
                                   "startTime": "10:00",
@@ -648,7 +696,7 @@ class ScheduleGenerationApiIntegrationTest {
                                   "restTime": 30,
                                   "workerMemberIds": [%d]
                                 }
-                                """.formatted(workerB.getId())))
+                                """.formatted(workDate, workerB.getId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workPartNo").value(4))
                 .andExpect(jsonPath("$.workerMemberIds[0]").value(workerB.getId()));
@@ -685,6 +733,7 @@ class ScheduleGenerationApiIntegrationTest {
     @Test
     void updateManualAssignment_failsWhenWorkDateOutsideConfirmedWeekSchedule() throws Exception {
         ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        LocalDate outsideDate = morning.getDay().getDate().plusDays(7);
 
         mockMvc.perform(put("/api/work-places/{workPlaceId}/confirmed-week-schedules/{confirmedWeekScheduleId}/time-details/{timeDetailId}/assignments",
                         workPlace.getId(), confirmed.getId(), morning.getId())
@@ -692,7 +741,7 @@ class ScheduleGenerationApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "workDate": "2026-07-13",
+                                  "workDate": "%s",
                                   "workPartNo": 1,
                                   "timeName": "수정타임",
                                   "startTime": "10:00",
@@ -700,7 +749,7 @@ class ScheduleGenerationApiIntegrationTest {
                                   "restTime": 30,
                                   "workerMemberIds": [%d]
                                 }
-                                """.formatted(workerB.getId())))
+                                """.formatted(outsideDate, workerB.getId())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("4001"));
     }
@@ -731,18 +780,21 @@ class ScheduleGenerationApiIntegrationTest {
     @Test
     void getMyConfirmedSchedules_returnsOnlyMyAssignmentsInDateRange() throws Exception {
         createConfirmedWeekSchedule();
+        LocalDate workDate = morning.getDay().getDate();
+        LocalDate from = workDate.minusDays(1);
+        LocalDate to = workDate.plusDays(30);
 
         mockMvc.perform(get("/api/me/confirmed-schedules")
-                        .param("from", "2026-07-01")
-                        .param("to", "2026-07-31")
+                        .param("from", from.toString())
+                        .param("to", to.toString())
                         .header(HttpHeaders.AUTHORIZATION, bearer(workerA)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.from").value("2026-07-01"))
-                .andExpect(jsonPath("$.to").value("2026-07-31"))
+                .andExpect(jsonPath("$.from").value(from.toString()))
+                .andExpect(jsonPath("$.to").value(to.toString()))
                 .andExpect(jsonPath("$.schedules.length()").value(1))
                 .andExpect(jsonPath("$.schedules[0].workPlaceId").value(workPlace.getId()))
                 .andExpect(jsonPath("$.schedules[0].workPlaceName").value(workPlace.getName()))
-                .andExpect(jsonPath("$.schedules[0].workDate").value("2026-07-06"))
+                .andExpect(jsonPath("$.schedules[0].workDate").value(workDate.toString()))
                 .andExpect(jsonPath("$.schedules[0].dayName").value("MONDAY"))
                 .andExpect(jsonPath("$.schedules[0].timeDetailId").value(morning.getId()))
                 .andExpect(jsonPath("$.schedules[0].timeName").value("오픈"))
@@ -759,16 +811,18 @@ class ScheduleGenerationApiIntegrationTest {
     void getOwnerWeeklyConfirmedSchedules_returnsWorkPlaceAssignmentsGroupedByDayAndTimeDetail() throws Exception {
         saveActiveProfileImage(workerA, "https://static.example.com/worker-a.png");
         createConfirmedWeekSchedule();
+        LocalDate weekStartDate = morning.getDay().getDate();
+        LocalDate weekEndDate = weekStartDate.plusDays(6);
 
         mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/weekly", workPlace.getId())
-                        .param("weekStartDate", "2026-07-06")
+                        .param("weekStartDate", weekStartDate.toString())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
-                .andExpect(jsonPath("$.weekStartDate").value("2026-07-06"))
-                .andExpect(jsonPath("$.weekEndDate").value("2026-07-12"))
+                .andExpect(jsonPath("$.weekStartDate").value(weekStartDate.toString()))
+                .andExpect(jsonPath("$.weekEndDate").value(weekEndDate.toString()))
                 .andExpect(jsonPath("$.days.length()").value(1))
-                .andExpect(jsonPath("$.days[0].workDate").value("2026-07-06"))
+                .andExpect(jsonPath("$.days[0].workDate").value(weekStartDate.toString()))
                 .andExpect(jsonPath("$.days[0].dayName").value("MONDAY"))
                 .andExpect(jsonPath("$.days[0].timeDetails.length()").value(2))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].timeDetailId").value(morning.getId()))
@@ -788,17 +842,20 @@ class ScheduleGenerationApiIntegrationTest {
     void getOwnerConfirmedSchedules_returnsWorkPlaceAssignmentsForDateRange() throws Exception {
         saveActiveProfileImage(workerA, "https://static.example.com/worker-a.png");
         createConfirmedWeekSchedule();
+        LocalDate workDate = morning.getDay().getDate();
+        LocalDate from = workDate.minusDays(1);
+        LocalDate to = workDate.plusDays(30);
 
         mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules", workPlace.getId())
-                        .param("from", "2026-07-01")
-                        .param("to", "2026-07-31")
+                        .param("from", from.toString())
+                        .param("to", to.toString())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
-                .andExpect(jsonPath("$.from").value("2026-07-01"))
-                .andExpect(jsonPath("$.to").value("2026-07-31"))
+                .andExpect(jsonPath("$.from").value(from.toString()))
+                .andExpect(jsonPath("$.to").value(to.toString()))
                 .andExpect(jsonPath("$.days.length()").value(1))
-                .andExpect(jsonPath("$.days[0].workDate").value("2026-07-06"))
+                .andExpect(jsonPath("$.days[0].workDate").value(workDate.toString()))
                 .andExpect(jsonPath("$.days[0].timeDetails.length()").value(2))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].memberId").value(workerA.getId()))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].profileImageUrl")
@@ -849,6 +906,36 @@ class ScheduleGenerationApiIntegrationTest {
                 .andExpect(status().isCreated());
 
         return confirmedWeekScheduleRepository.findAll().get(0);
+    }
+
+    /**
+     * 지정한 월요일부터 7일짜리 테스트용 주간 스케줄 조건을 생성한다.
+     */
+    private WeekSchedule createWeekScheduleStartingAt(LocalDate monday) {
+        WeekSchedule createdWeekSchedule = weekScheduleRepository.save(WeekSchedule.create(
+                workPlace,
+                "TEST-" + monday,
+                LocalDate.now(),
+                LocalTime.of(9, 0),
+                LocalTime.of(22, 0),
+                1,
+                1
+        ));
+
+        for (int plusDays = 0; plusDays < 7; plusDays++) {
+            LocalDate date = monday.plusDays(plusDays);
+            dayRepository.save(Day.create(
+                    createdWeekSchedule,
+                    ScheduleDayName.valueOf(date.getDayOfWeek().name()),
+                    date,
+                    plusDays + 1,
+                    1,
+                    false,
+                    false
+            ));
+        }
+
+        return createdWeekSchedule;
     }
 
     /**

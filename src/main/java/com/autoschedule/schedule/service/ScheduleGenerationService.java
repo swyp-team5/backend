@@ -53,7 +53,10 @@ import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -106,12 +109,14 @@ public class ScheduleGenerationService {
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
-        validateNoActiveGeneratedRun(weekSchedule.getId());
 
         List<Day> days = dayRepository.findByWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByDateAscIdAsc(
                 weekSchedule.getId(),
                 DayStatus.ACTIVE
         );
+        validateNextWeekScheduleDays(days);
+        validateNoActiveGeneratedRun(weekSchedule.getId());
+
         List<TimeDetail> timeDetails = findActiveTimeDetails(days);
         List<TimeDetail> normalTimeDetails = findNormalTimeDetails(timeDetails);
         List<TimeDetail> randomTimeDetails = findRandomTimeDetails(timeDetails);
@@ -196,7 +201,12 @@ public class ScheduleGenerationService {
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
+        List<Day> days = dayRepository.findByWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByDateAscIdAsc(
+                weekSchedule.getId(),
+                DayStatus.ACTIVE
+        );
 
+        validateNextWeekScheduleDays(days);
         markActiveGeneratedRunsAndPreviewsDeleted(weekSchedule.getId());
         return generateSchedulePreview(ownerMemberId, workPlaceId, weekScheduleId);
     }
@@ -852,6 +862,28 @@ public class ScheduleGenerationService {
                         ConfirmedWeekScheduleStatus.ACTIVE
                 )
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "확정된 주간 스케줄을 찾을 수 없습니다."));
+    }
+
+    /**
+     * 자동 스케줄 생성 대상이 현재 날짜 기준 차주 월요일부터 일요일까지의 7일 스케줄인지 검증한다.
+     */
+    private void validateNextWeekScheduleDays(List<Day> days) {
+        LocalDate nextMonday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate nextSunday = nextMonday.plusDays(6);
+
+        Set<LocalDate> dates = days.stream()
+                .map(Day::getDate)
+                .collect(Collectors.toSet());
+
+        if (days.size() != 7 || dates.size() != 7) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "자동 스케줄은 다음 주 스케줄 조건으로만 생성할 수 있습니다.");
+        }
+
+        for (LocalDate date : dates) {
+            if (date.isBefore(nextMonday) || date.isAfter(nextSunday)) {
+                throw new ApiException(ErrorCode.VALIDATION_FAILED, "자동 스케줄은 다음 주 스케줄 조건으로만 생성할 수 있습니다.");
+            }
+        }
     }
 
     /**
