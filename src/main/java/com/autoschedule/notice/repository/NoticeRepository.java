@@ -48,7 +48,7 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
     /**
      * 새 대표 공지를 제외한 같은 사업장의 기존 대표 공지를 해제한다.
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("""
             update Notice notice
                set notice.representative = false

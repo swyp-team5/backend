@@ -235,6 +235,89 @@ class NoticeApiIntegrationTest {
     }
 
     /**
+     * 대표 공지로 이미지를 첨부해 작성해도 이미지 row는 ACTIVE로 확정되고 목록 응답에 포함된다.
+     */
+    @Test
+    void ownerCreatesRepresentativeNoticeWithUploadedImage() throws Exception {
+        createNotice(owner, workPlace.getId(), "old representative", "old content", true);
+
+        when(noticeImageStorage.createUploadUrl(any()))
+                .thenAnswer(invocation -> {
+                    com.autoschedule.notice.dto.NoticeImageUploadTarget target = invocation.getArgument(0);
+                    return new NoticeImageUploadUrl(
+                            "https://s3.example.com/upload",
+                            target.objectKey(),
+                            target.storedFileName(),
+                            java.util.Map.of("Content-Type", "image/webp"),
+                            300
+                    );
+                });
+        when(noticeImageStorage.getObjectMetadata(any()))
+                .thenReturn(new NoticeImageObjectMetadata(
+                        "image/webp",
+                        9406,
+                        new byte[]{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'}
+                ));
+
+        String uploadResponse = mockMvc.perform(post("/api/work-places/{workPlaceId}/notice-images/upload-url", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalFileName": "notice-image.webp",
+                                  "contentType": "image/webp",
+                                  "fileSize": 9406
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.objectKey").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode upload = objectMapper.readTree(uploadResponse);
+        String objectKey = upload.get("objectKey").asText();
+
+        JsonNode createdNotice = objectMapper.readTree(mockMvc.perform(post("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(noticeBodyWithImages(
+                                "representative notice with image",
+                                "content with image",
+                                true,
+                                objectKey
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.images.length()").value(1))
+                .andExpect(jsonPath("$.images[0].objectKey").value(objectKey))
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        long noticeId = createdNotice.get("noticeId").asLong();
+
+        Integer activeImageCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                          from notice_image
+                         where notice_id = ?
+                           and object_key = ?
+                           and status = 'ACTIVE'
+                           and uploaded_at is not null
+                        """,
+                Integer.class,
+                noticeId,
+                objectKey
+        );
+        assertThat(activeImageCount).isOne();
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].noticeId").value(noticeId))
+                .andExpect(jsonPath("$.content[0].images.length()").value(1))
+                .andExpect(jsonPath("$.content[0].images[0].objectKey").value(objectKey));
+    }
+
+    /**
      * 근무자는 공지 이미지 업로드 URL을 발급받을 수 없다.
      */
     @Test
