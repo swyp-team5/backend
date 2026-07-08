@@ -3,7 +3,11 @@ package com.autoschedule.workerselect.repository;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmission;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -38,5 +42,24 @@ public interface WorkerSelectSubmissionRepository extends JpaRepository<WorkerSe
             Long workPlaceId,
             Long weekScheduleId,
             WorkerSelectSubmissionStatus status
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update WorkerSelectSubmission submission
+            set submission.status = :deletedStatus,
+                submission.deletedAt = :deletedAt,
+                submission.updatedAt = :deletedAt
+            where submission.workPlaceId = :workPlaceId
+              and submission.weekScheduleId = :weekScheduleId
+              and submission.status = :activeStatus
+              and submission.deletedAt is null
+            """)
+    int markActiveDeletedByWorkPlaceIdAndWeekScheduleId(
+            @Param("workPlaceId") Long workPlaceId,
+            @Param("weekScheduleId") Long weekScheduleId,
+            @Param("activeStatus") WorkerSelectSubmissionStatus activeStatus,
+            @Param("deletedStatus") WorkerSelectSubmissionStatus deletedStatus,
+            @Param("deletedAt") LocalDateTime deletedAt
     );
 }

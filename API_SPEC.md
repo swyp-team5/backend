@@ -5235,7 +5235,8 @@ Authorization: Bearer {accessToken}
 
 - 사장 본인의 사업장에 속한 활성 스케줄 조건만 초기화할 수 있습니다.
 - 초기화 시 `week_schedule.status`는 `DELETED`로 변경되고 `deleted_at`이 기록됩니다.
-- 초기화된 스케줄 조건은 조회/제출/자동 생성 대상에서 제외됩니다.
+- 초기화 시 해당 주간 조건의 활성 `worker_select_submission`, `worker_unavailable_time_detail`도 `DELETED`로 변경되고 `deleted_at`이 기록됩니다.
+- 초기화된 스케줄 조건과 제출 데이터는 조회/제출/자동 생성 대상에서 제외됩니다.
 - 초기화 후 같은 다음 주차 스케줄 조건을 다시 생성할 수 있습니다.
 
 #### 주요 오류

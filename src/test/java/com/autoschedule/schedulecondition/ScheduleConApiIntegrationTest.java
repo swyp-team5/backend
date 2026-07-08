@@ -276,6 +276,84 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
+     * 사장이 스케줄 조건을 초기화하면 근무자 제출 현황과 불가 시간 상세도 삭제 상태가 된다.
+     */
+    @Test
+    void deleteScheduleCondition_marksWorkerSelectDataDeleted() throws Exception {
+        WeekSchedule weekSchedule = saveWeekScheduleInDb();
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        Day day = saveDayInDb(weekSchedule, ScheduleDayName.MONDAY, monday, 1);
+        TimeDetail timeDetail = saveTimeDetailInDb(day);
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "weekScheduleId": %d, "timeDetails": [%d] }
+                                """.formatted(weekSchedule.getId(), timeDetail.getId())))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/api/work-places/{workPlaceId}/schedule-conditions/{weekScheduleId}",
+                        workPlace.getId(), weekSchedule.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNoContent());
+
+        Integer activeSubmissionCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from worker_select_submission
+                        where week_schedule_id = ?
+                          and status = 'ACTIVE'
+                          and deleted_at is null
+                        """,
+                Integer.class,
+                weekSchedule.getId()
+        );
+        Integer deletedSubmissionCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from worker_select_submission
+                        where week_schedule_id = ?
+                          and status = 'DELETED'
+                          and deleted_at is not null
+                        """,
+                Integer.class,
+                weekSchedule.getId()
+        );
+        Integer activeUnavailableTimeDetailCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from worker_unavailable_time_detail detail
+                        join worker_select_submission submission
+                          on submission.worker_select_submission_id = detail.worker_select_submission_id
+                        where submission.week_schedule_id = ?
+                          and detail.status = 'ACTIVE'
+                          and detail.deleted_at is null
+                        """,
+                Integer.class,
+                weekSchedule.getId()
+        );
+        Integer deletedUnavailableTimeDetailCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from worker_unavailable_time_detail detail
+                        join worker_select_submission submission
+                          on submission.worker_select_submission_id = detail.worker_select_submission_id
+                        where submission.week_schedule_id = ?
+                          and detail.status = 'DELETED'
+                          and detail.deleted_at is not null
+                        """,
+                Integer.class,
+                weekSchedule.getId()
+        );
+
+        assertThat(activeSubmissionCount).isZero();
+        assertThat(deletedSubmissionCount).isOne();
+        assertThat(activeUnavailableTimeDetailCount).isZero();
+        assertThat(deletedUnavailableTimeDetailCount).isOne();
+    }
+
+    /**
      * 스케줄 조건 생성 후 Day에는 요일별 값(dayName, date, groupingId 등)만 저장되고,
      * workPlaceOpenTime 등 공통 조건은 Day에 존재하지 않는다.
      */

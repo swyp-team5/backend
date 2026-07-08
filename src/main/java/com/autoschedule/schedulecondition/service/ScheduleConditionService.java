@@ -12,6 +12,10 @@ import com.autoschedule.schedulecondition.dto.*;
 import com.autoschedule.schedulecondition.repository.DayRepository;
 import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
+import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
+import com.autoschedule.workerselect.domain.WorkerUnavailableTimeDetailStatus;
+import com.autoschedule.workerselect.repository.WorkerSelectSubmissionRepository;
+import com.autoschedule.workerselect.repository.WorkerUnavailableTimeDetailRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
@@ -42,6 +46,8 @@ public class ScheduleConditionService {
     private final DayRepository dayRepository;
     private final TimeDetailRepository timeDetailRepository;
     private final CrewRepository crewRepository;
+    private final WorkerSelectSubmissionRepository workerSelectSubmissionRepository;
+    private final WorkerUnavailableTimeDetailRepository workerUnavailableTimeDetailRepository;
 
     /**
      * 사장이 선택한 스케줄 조건을 저장한다.
@@ -139,7 +145,23 @@ public class ScheduleConditionService {
                 )
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "스케줄 조건을 찾을 수 없습니다."));
 
-        weekSchedule.markDeleted(LocalDateTime.now());
+        LocalDateTime deletedAt = LocalDateTime.now();
+
+        workerUnavailableTimeDetailRepository.markActiveDeletedByWorkPlaceIdAndWeekScheduleId(
+                workPlace.getId(),
+                weekSchedule.getId(),
+                WorkerUnavailableTimeDetailStatus.ACTIVE,
+                WorkerUnavailableTimeDetailStatus.DELETED,
+                deletedAt
+        );
+        workerSelectSubmissionRepository.markActiveDeletedByWorkPlaceIdAndWeekScheduleId(
+                workPlace.getId(),
+                weekSchedule.getId(),
+                WorkerSelectSubmissionStatus.ACTIVE,
+                WorkerSelectSubmissionStatus.DELETED,
+                deletedAt
+        );
+        weekSchedule.markDeleted(deletedAt);
     }
 
     /**
