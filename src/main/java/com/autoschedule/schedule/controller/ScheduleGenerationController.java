@@ -2,13 +2,7 @@ package com.autoschedule.schedule.controller;
 
 import com.autoschedule.auth.jwt.JwtAuthenticationPrincipal;
 import com.autoschedule.global.security.annotation.OwnerOnly;
-import com.autoschedule.schedule.dto.ConfirmWeekScheduleRequest;
-import com.autoschedule.schedule.dto.ConfirmedWeekScheduleResponse;
-import com.autoschedule.schedule.dto.ManualScheduleAssignmentDeleteResponse;
-import com.autoschedule.schedule.dto.ManualScheduleAssignmentRequest;
-import com.autoschedule.schedule.dto.ManualScheduleAssignmentResponse;
-import com.autoschedule.schedule.dto.ScheduleGenerationRunResponse;
-import com.autoschedule.schedule.dto.SchedulePreviewResponse;
+import com.autoschedule.schedule.dto.*;
 import com.autoschedule.schedule.service.ScheduleGenerationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -119,7 +113,7 @@ public class ScheduleGenerationController {
             @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
             @PathVariable Long workPlaceId,
             @PathVariable Long confirmedWeekScheduleId,
-            @Valid @RequestBody ManualScheduleAssignmentRequest request
+            @Valid @RequestBody ManualScheduleAssignmentCreateRequest request
     ) {
         return scheduleGenerationService.createManualAssignment(
                 principal.memberId(),

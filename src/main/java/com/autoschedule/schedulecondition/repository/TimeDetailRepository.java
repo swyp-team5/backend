@@ -7,6 +7,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 타임별 상세 정보 저장과 조회를 담당한다.
@@ -74,5 +76,23 @@ public interface TimeDetailRepository extends JpaRepository<TimeDetail, Long> {
             Integer workPartNo,
             TimeDetailStatus status
     );
+
+    boolean existsByDay_IdAndWorkPartNoAndStatusAndDeletedAtIsNullAndIdNot(
+        Long dayId,
+        Integer workPartNo,
+        TimeDetailStatus status,
+        Long id
+    );
+
+    /**
+     * 삭제 여부와 무관하게 특정 날짜의 마지막 근무 파트 번호를 조회한다.
+     * soft delete row도 DB unique(day_id, work_part_no)에 남아 있으므로 반드시 포함해야 한다.
+     */
+    @Query("""
+            select coalesce(max(timeDetail.workPartNo), 0)
+            from TimeDetail timeDetail
+            where timeDetail.day.id = :dayId
+            """)
+    int findMaxWorkPartNoByDayId(@Param("dayId") Long dayId);
 
 }

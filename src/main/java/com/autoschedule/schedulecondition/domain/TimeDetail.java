@@ -75,6 +75,24 @@ public class TimeDetail extends BaseEntity {
         return timeDetail;
     }
 
+    public void update(
+        Day day,
+        Integer workPartNo,
+        String timeName,
+        Integer workerCount,
+        LocalTime startTime,
+        LocalTime closeTime,
+        Integer restTime
+    ) {
+        this.day = day;
+        this.workPartNo = workPartNo;
+        this.timeName = timeName;
+        this.workerCount = workerCount;
+        this.startTime = startTime;
+        this.closeTime = closeTime;
+        this.restTime = restTime;
+    }
+
     /**
      * 타임별 상세 정보를 삭제 상태로 변경한다.
      */

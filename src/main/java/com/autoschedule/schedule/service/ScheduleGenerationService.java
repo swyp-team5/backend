@@ -16,13 +16,7 @@ import com.autoschedule.schedule.domain.ScheduleGenerationRun;
 import com.autoschedule.schedule.domain.ScheduleGenerationRunStatus;
 import com.autoschedule.schedule.domain.SchedulePreview;
 import com.autoschedule.schedule.domain.SchedulePreviewStatus;
-import com.autoschedule.schedule.dto.ConfirmWeekScheduleRequest;
-import com.autoschedule.schedule.dto.ConfirmedWeekScheduleResponse;
-import com.autoschedule.schedule.dto.ManualScheduleAssignmentDeleteResponse;
-import com.autoschedule.schedule.dto.ManualScheduleAssignmentRequest;
-import com.autoschedule.schedule.dto.ManualScheduleAssignmentResponse;
-import com.autoschedule.schedule.dto.ScheduleGenerationRunResponse;
-import com.autoschedule.schedule.dto.SchedulePreviewResponse;
+import com.autoschedule.schedule.dto.*;
 import com.autoschedule.schedule.generator.ScheduleCandidate;
 import com.autoschedule.schedule.generator.ScheduleCandidateDay;
 import com.autoschedule.schedule.generator.ScheduleCandidateGenerationCommand;
@@ -56,6 +50,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -295,24 +290,27 @@ public class ScheduleGenerationService {
 
     /**
      * 확정된 주간 스케줄 안에 사장이 직접 근무 파트와 배정을 추가한다.
+     * workPartNo는 클라이언트 입력을 받지 않고, 해당 날짜의 마지막 파트 번호 + 1로 서버가 자동 부여한다.
      */
     @Transactional
     public ManualScheduleAssignmentResponse createManualAssignment(
             Long ownerMemberId,
             Long workPlaceId,
             Long confirmedWeekScheduleId,
-            ManualScheduleAssignmentRequest request
+            ManualScheduleAssignmentCreateRequest request
     ) {
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         ConfirmedWeekSchedule confirmed = findActiveConfirmedWeekSchedule(confirmedWeekScheduleId, workPlace.getId());
-        Day day = findActiveDayInConfirmedSchedule(confirmed, request);
+        Day day = findActiveDayInConfirmedSchedule(confirmed, request.workDate());
 
-        validateManualAssignmentRequest(workPlace.getId(), day.getId(), request);
+        validateManualAssignmentCreateRequest(workPlace.getId(), request);
+
+        int nextWorkPartNo = getNextWorkPartNo(day.getId());
 
         TimeDetail timeDetail = timeDetailRepository.save(TimeDetail.create(
                 day,
-                request.workPartNo(),
+                nextWorkPartNo,
                 request.timeName(),
                 request.workerMemberIds().size(),
                 request.startTime(),
@@ -331,42 +329,49 @@ public class ScheduleGenerationService {
     }
 
     /**
-     * 확정된 근무 파트를 새 time_detail과 배정으로 교체한다.
+     * 확정된 근무 파트와 배정을 수정한다.
      */
     @Transactional
     public ManualScheduleAssignmentResponse updateManualAssignment(
-            Long ownerMemberId,
-            Long workPlaceId,
-            Long confirmedWeekScheduleId,
-            Long timeDetailId,
-            ManualScheduleAssignmentRequest request
+        Long ownerMemberId,
+        Long workPlaceId,
+        Long confirmedWeekScheduleId,
+        Long timeDetailId,
+        ManualScheduleAssignmentRequest request
     ) {
         Member owner = findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
         ConfirmedWeekSchedule confirmed = findActiveConfirmedWeekSchedule(confirmedWeekScheduleId, workPlace.getId());
-        TimeDetail oldTimeDetail = findActiveTimeDetailInConfirmedSchedule(confirmed, timeDetailId);
-        Day newDay = findActiveDayInConfirmedSchedule(confirmed, request);
+        TimeDetail timeDetail = findActiveTimeDetailInConfirmedSchedule(confirmed, timeDetailId);
+        Day newDay = findActiveDayInConfirmedSchedule(confirmed, request.workDate());
 
-        deleteTimeDetailAndAssignments(confirmed, oldTimeDetail);
-        validateManualAssignmentRequest(workPlace.getId(), newDay.getId(), request);
+        validateManualAssignmentUpdateRequest(
+            workPlace.getId(),
+            newDay.getId(),
+            timeDetail.getId(),
+            request
+        );
 
-        TimeDetail newTimeDetail = timeDetailRepository.save(TimeDetail.create(
-                newDay,
-                request.workPartNo(),
-                request.timeName(),
-                request.workerMemberIds().size(),
-                request.startTime(),
-                request.closeTime(),
-                request.restTime()
-        ));
-        saveManualAssignments(confirmed, workPlace.getId(), newTimeDetail, request.workerMemberIds());
+        deleteAssignmentsOnly(confirmed, timeDetail);
+
+        timeDetail.update(
+            newDay,
+            request.workPartNo(),
+            request.timeName(),
+            request.workerMemberIds().size(),
+            request.startTime(),
+            request.closeTime(),
+            request.restTime()
+        );
+
+        saveManualAssignments(confirmed, workPlace.getId(), timeDetail, request.workerMemberIds());
 
         return ManualScheduleAssignmentResponse.of(
-                confirmed.getId(),
-                workPlace.getId(),
-                confirmed.getWeekSchedule().getId(),
-                newTimeDetail,
-                request.workerMemberIds()
+            confirmed.getId(),
+            workPlace.getId(),
+            confirmed.getWeekSchedule().getId(),
+            timeDetail,
+            request.workerMemberIds()
         );
     }
 
@@ -393,6 +398,57 @@ public class ScheduleGenerationService {
                 deletedAssignmentCount,
                 "DELETED"
         );
+    }
+
+    /**
+     * 단건 근무 파트 수정 요청의 업무 규칙을 검증한다.
+     * 수정 대상 time_detail 자신은 중복 검사에서 제외한다.
+     */
+    private void validateManualAssignmentUpdateRequest(
+        Long workPlaceId,
+        Long dayId,
+        Long timeDetailId,
+        ManualScheduleAssignmentRequest request
+    ) {
+        validateTimeRange(request.startTime(), request.closeTime());
+        validateWorkerMemberIds(workPlaceId, request.workerMemberIds());
+
+        if (timeDetailRepository.existsByDay_IdAndWorkPartNoAndStatusAndDeletedAtIsNullAndIdNot(
+            dayId,
+            request.workPartNo(),
+            TimeDetailStatus.ACTIVE,
+            timeDetailId
+        )) {
+            throw new ApiException(ErrorCode.CONFLICT, "같은 날짜에 동일한 근무 파트 번호가 이미 존재합니다.");
+        }
+    }
+
+    /**
+     * 특정 날짜의 다음 근무 파트 번호를 계산한다.
+     * soft delete된 time_detail도 DB unique 제약에는 남아 있으므로 전체 row 기준 max + 1을 사용한다.
+     */
+    private int getNextWorkPartNo(Long dayId) {
+        return timeDetailRepository.findMaxWorkPartNoByDayId(dayId) + 1;
+    }
+
+    /**
+     * time_detail은 유지하고, 해당 time_detail에 묶인 활성 확정 배정만 삭제 처리한다.
+     */
+    private int deleteAssignmentsOnly(
+        ConfirmedWeekSchedule confirmed,
+        TimeDetail timeDetail
+    ) {
+        LocalDateTime now = LocalDateTime.now();
+
+        List<ConfirmedScheduleAssignment> assignments = confirmedScheduleAssignmentRepository
+            .findByConfirmedWeekSchedule_IdAndTimeDetail_IdAndStatusAndDeletedAtIsNullOrderByIdAsc(
+                confirmed.getId(),
+                timeDetail.getId(),
+                ConfirmedScheduleAssignmentStatus.ACTIVE
+            );
+
+        assignments.forEach(assignment -> assignment.markDeleted(now));
+        return assignments.size();
     }
 
     /**
@@ -703,18 +759,30 @@ public class ScheduleGenerationService {
      * 확정 주간 스케줄에 속한 날짜인지 검증하고 활성 day를 조회한다.
      */
     private Day findActiveDayInConfirmedSchedule(
-            ConfirmedWeekSchedule confirmed,
-            ManualScheduleAssignmentRequest request
+        ConfirmedWeekSchedule confirmed,
+        LocalDate workDate
     ) {
         return dayRepository.findByWeekSchedule_IdAndDateAndStatusAndDeletedAtIsNull(
-                        confirmed.getWeekSchedule().getId(),
-                        request.workDate(),
-                        DayStatus.ACTIVE
-                )
-                .orElseThrow(() -> new ApiException(
-                        ErrorCode.INVALID_REQUEST,
-                        "확정된 주간 스케줄 기간에 포함되지 않는 날짜입니다."
-                ));
+                confirmed.getWeekSchedule().getId(),
+                workDate,
+                DayStatus.ACTIVE
+            )
+            .orElseThrow(() -> new ApiException(
+                ErrorCode.INVALID_REQUEST,
+                "확정된 주간 스케줄 기간에 포함되지 않는 날짜입니다."
+            ));
+    }
+
+    /**
+     * 단건 근무 파트 추가 요청의 업무 규칙을 검증한다.
+     * workPartNo는 서버에서 자동 부여하므로 중복 검증을 하지 않는다.
+     */
+    private void validateManualAssignmentCreateRequest(
+        Long workPlaceId,
+        ManualScheduleAssignmentCreateRequest request
+    ) {
+        validateTimeRange(request.startTime(), request.closeTime());
+        validateWorkerMemberIds(workPlaceId, request.workerMemberIds());
     }
 
     /**
@@ -734,31 +802,12 @@ public class ScheduleGenerationService {
                 .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "근무 파트를 찾을 수 없습니다."));
     }
 
-    /**
-     * 단건 근무 파트 추가/수정 요청의 업무 규칙을 검증한다.
-     */
-    private void validateManualAssignmentRequest(
-            Long workPlaceId,
-            Long dayId,
-            ManualScheduleAssignmentRequest request
-    ) {
-        validateTimeRange(request);
-        validateWorkerMemberIds(workPlaceId, request.workerMemberIds());
-
-        if (timeDetailRepository.existsByDay_IdAndWorkPartNoAndStatusAndDeletedAtIsNull(
-                dayId,
-                request.workPartNo(),
-                TimeDetailStatus.ACTIVE
-        )) {
-            throw new ApiException(ErrorCode.CONFLICT, "같은 날짜에 동일한 근무 파트 번호가 이미 존재합니다.");
-        }
-    }
 
     /**
      * 근무 시작 시간이 종료 시간보다 빠른지 검증한다.
      */
-    private void validateTimeRange(ManualScheduleAssignmentRequest request) {
-        if (!request.startTime().isBefore(request.closeTime())) {
+    private void validateTimeRange(LocalTime startTime, LocalTime closeTime) {
+        if (!startTime.isBefore(closeTime)) {
             throw new ApiException(ErrorCode.INVALID_REQUEST, "근무 시작 시간은 종료 시간보다 빨라야 합니다.");
         }
     }
