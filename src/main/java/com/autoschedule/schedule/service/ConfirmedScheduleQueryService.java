@@ -9,6 +9,7 @@ import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.member.repository.ProfileImageRepository;
 import com.autoschedule.schedule.domain.ConfirmedScheduleAssignment;
 import com.autoschedule.schedule.domain.ConfirmedScheduleAssignmentStatus;
+import com.autoschedule.schedule.domain.ConfirmedWeekSchedule;
 import com.autoschedule.schedule.domain.ConfirmedWeekScheduleStatus;
 import com.autoschedule.schedule.dto.ConfirmedScheduleWorkerResponse;
 import com.autoschedule.schedule.dto.MyConfirmedScheduleItemResponse;
@@ -18,10 +19,12 @@ import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleDayResponse;
 import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleResponse;
 import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleTimeDetailResponse;
 import com.autoschedule.schedule.repository.ConfirmedScheduleAssignmentRepository;
+import com.autoschedule.schedule.repository.ConfirmedWeekScheduleRepository;
 import com.autoschedule.schedulecondition.domain.Day;
 import com.autoschedule.schedulecondition.domain.DayStatus;
 import com.autoschedule.schedulecondition.domain.TimeDetail;
 import com.autoschedule.schedulecondition.domain.TimeDetailStatus;
+import com.autoschedule.schedulecondition.domain.WeekScheduleStatus;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
@@ -47,6 +50,7 @@ public class ConfirmedScheduleQueryService {
     private final WorkPlaceRepository workPlaceRepository;
     private final ProfileImageRepository profileImageRepository;
     private final ConfirmedScheduleAssignmentRepository confirmedScheduleAssignmentRepository;
+    private final ConfirmedWeekScheduleRepository confirmedWeekScheduleRepository;
 
     /**
      * 근무자 본인에게 배정된 확정 근무 일정을 기간 기준으로 조회한다.
@@ -120,6 +124,15 @@ public class ConfirmedScheduleQueryService {
         findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, ownerMemberId);
         LocalDate weekEndDate = weekStartDate.plusDays(6);
+        ConfirmedWeekSchedule confirmedWeekSchedule =
+                confirmedWeekScheduleRepository.findActiveByWorkPlaceIdAndWeekStartDate(
+                                workPlace.getId(),
+                                weekStartDate,
+                                ConfirmedWeekScheduleStatus.ACTIVE,
+                                WeekScheduleStatus.ACTIVE,
+                                DayStatus.ACTIVE
+                        )
+                        .orElse(null);
 
         List<OwnerWeeklyConfirmedScheduleDayResponse> days = findOwnerConfirmedScheduleDays(
                 workPlace.getId(),
@@ -127,7 +140,14 @@ public class ConfirmedScheduleQueryService {
                 weekEndDate
         );
 
-        return OwnerWeeklyConfirmedScheduleResponse.of(workPlace.getId(), weekStartDate, weekEndDate, days);
+        return OwnerWeeklyConfirmedScheduleResponse.of(
+                workPlace.getId(),
+                confirmedWeekSchedule == null ? null : confirmedWeekSchedule.getWeekSchedule().getId(),
+                confirmedWeekSchedule == null ? null : confirmedWeekSchedule.getId(),
+                weekStartDate,
+                weekEndDate,
+                days
+        );
     }
 
     /**

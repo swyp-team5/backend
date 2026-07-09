@@ -840,7 +840,7 @@ class ScheduleGenerationApiIntegrationTest {
     @Test
     void getOwnerWeeklyConfirmedSchedules_returnsWorkPlaceAssignmentsGroupedByDayAndTimeDetail() throws Exception {
         saveActiveProfileImage(workerA, "https://static.example.com/worker-a.png");
-        createConfirmedWeekSchedule();
+        ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
         LocalDate weekStartDate = morning.getDay().getDate();
         LocalDate weekEndDate = weekStartDate.plusDays(6);
 
@@ -849,6 +849,8 @@ class ScheduleGenerationApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.weekScheduleId").value(weekSchedule.getId()))
+                .andExpect(jsonPath("$.confirmedWeekScheduleId").value(confirmed.getId()))
                 .andExpect(jsonPath("$.weekStartDate").value(weekStartDate.toString()))
                 .andExpect(jsonPath("$.weekEndDate").value(weekEndDate.toString()))
                 .andExpect(jsonPath("$.days.length()").value(1))

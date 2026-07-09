@@ -5163,6 +5163,8 @@ Authorization: Bearer {accessToken}
 ```json
 {
   "workPlaceId": 1,
+  "weekScheduleId": 10,
+  "confirmedWeekScheduleId": 3,
   "weekStartDate": "2026-07-06",
   "weekEndDate": "2026-07-12",
   "days": [
@@ -5195,6 +5197,10 @@ Authorization: Bearer {accessToken}
 
 - 사장만 호출할 수 있다.
 - 요청자는 해당 사업장의 소유자여야 한다.
+- `weekScheduleId`는 조회한 주간의 스케줄 조건 ID이다.
+- `confirmedWeekScheduleId`는 해당 주간의 활성 확정 스케줄 ID이다.
+- 클라이언트는 단건 근무 파트 추가·수정·삭제 API를 호출할 때 응답의 `confirmedWeekScheduleId`를 경로 변수로 사용한다.
+- 해당 주간에 활성 확정 스케줄이 없으면 `weekScheduleId`, `confirmedWeekScheduleId`는 `null`이다.
 - `weekEndDate`는 서버가 `weekStartDate + 6일`로 계산한다.
 - 조회 대상은 활성 `confirmed_week_schedule`, 활성 `confirmed_schedule_assignment`, 활성 `day`, 활성 `time_detail`만 포함한다.
 - 근무자 프로필 이미지는 활성 프로필 이미지가 있는 경우에만 `profileImageUrl`로 내려간다.

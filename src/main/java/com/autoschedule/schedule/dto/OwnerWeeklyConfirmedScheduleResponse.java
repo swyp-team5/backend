@@ -8,6 +8,8 @@ import java.util.List;
  */
 public record OwnerWeeklyConfirmedScheduleResponse(
         Long workPlaceId,
+        Long weekScheduleId,
+        Long confirmedWeekScheduleId,
         LocalDate weekStartDate,
         LocalDate weekEndDate,
         List<OwnerWeeklyConfirmedScheduleDayResponse> days
@@ -18,10 +20,19 @@ public record OwnerWeeklyConfirmedScheduleResponse(
      */
     public static OwnerWeeklyConfirmedScheduleResponse of(
             Long workPlaceId,
+            Long weekScheduleId,
+            Long confirmedWeekScheduleId,
             LocalDate weekStartDate,
             LocalDate weekEndDate,
             List<OwnerWeeklyConfirmedScheduleDayResponse> days
     ) {
-        return new OwnerWeeklyConfirmedScheduleResponse(workPlaceId, weekStartDate, weekEndDate, days);
+        return new OwnerWeeklyConfirmedScheduleResponse(
+                workPlaceId,
+                weekScheduleId,
+                confirmedWeekScheduleId,
+                weekStartDate,
+                weekEndDate,
+                days
+        );
     }
 }

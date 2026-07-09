@@ -2,8 +2,13 @@ package com.autoschedule.schedule.repository;
 
 import com.autoschedule.schedule.domain.ConfirmedWeekSchedule;
 import com.autoschedule.schedule.domain.ConfirmedWeekScheduleStatus;
+import com.autoschedule.schedulecondition.domain.DayStatus;
+import com.autoschedule.schedulecondition.domain.WeekScheduleStatus;
+import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 확정 주간 스케줄 헤더를 저장하고 조회한다.
@@ -35,5 +40,30 @@ public interface ConfirmedWeekScheduleRepository extends JpaRepository<Confirmed
             Long id,
             Long workPlaceId,
             ConfirmedWeekScheduleStatus status
+    );
+
+    /**
+     * 특정 사업장과 주 시작일에 해당하는 활성 확정 주간 스케줄을 조회한다.
+     */
+    @Query("""
+            select distinct confirmed
+            from ConfirmedWeekSchedule confirmed
+            join fetch confirmed.weekSchedule weekSchedule
+            join Day day on day.weekSchedule = weekSchedule
+            where confirmed.workPlaceId = :workPlaceId
+              and confirmed.status = :confirmedStatus
+              and confirmed.deletedAt is null
+              and weekSchedule.status = :weekScheduleStatus
+              and weekSchedule.deletedAt is null
+              and day.date = :weekStartDate
+              and day.status = :dayStatus
+              and day.deletedAt is null
+            """)
+    Optional<ConfirmedWeekSchedule> findActiveByWorkPlaceIdAndWeekStartDate(
+            @Param("workPlaceId") Long workPlaceId,
+            @Param("weekStartDate") LocalDate weekStartDate,
+            @Param("confirmedStatus") ConfirmedWeekScheduleStatus confirmedStatus,
+            @Param("weekScheduleStatus") WeekScheduleStatus weekScheduleStatus,
+            @Param("dayStatus") DayStatus dayStatus
     );
 }
