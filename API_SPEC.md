@@ -4866,7 +4866,9 @@ Authorization: Bearer {accessToken}
 
 ### 18-5. 확정 스케줄 단건 근무 파트 추가 API
 
-사장이 이미 확정된 주간 스케줄 안에서 단건 근무 파트(`time_detail`)와 근무자 배정(`confirmed_schedule_assignment`)을 직접 추가한다.
+사장이 이미 확정된 주간 스케줄 안에서 단건 근무 파트(time_detail)와 근무자 배정(confirmed_schedule_assignment)을 직접 추가한다.
+
+추가되는 근무 파트의 workPartNo는 클라이언트가 직접 지정하지 않고, 서버가 해당 날짜의 기존 근무 파트 번호 중 최댓값에 +1 하여 자동 부여한다.
 
 | 항목 | 내용 |
 | --- | --- |
@@ -4879,7 +4881,6 @@ Authorization: Bearer {accessToken}
 ```json
 {
   "workDate": "2026-07-06",
-  "workPartNo": 3,
   "timeName": "야간",
   "startTime": "22:00",
   "closeTime": "23:00",
@@ -4907,16 +4908,29 @@ Authorization: Bearer {accessToken}
   "assignmentCount": 2
 }
 ```
+#### workPartNo 자동 부여 정책
+
+- 클라이언트는 단건 근무 파트 추가 요청 시 workPartNo를 전달하지 않는다.
+- 서버는 요청한 workDate에 해당하는 day를 찾은 뒤, 해당 day에 존재하는 time_detail.work_part_no의 최댓값을 조회한다.
+- 새로 추가되는 근무 파트의 workPartNo는 max(workPartNo) + 1로 부여한다.
+- 예를 들어 해당 날짜에 기존 근무 파트가 오픈/미들/마감으로 workPartNo = 1, 2, 3까지 존재하면, 새로 추가되는 근무 파트는 workPartNo = 4가 된다.
+- time_detail은 soft delete를 사용하므로, workPartNo 최댓값 계산 시 삭제된 row도 포함한다.
+ - 예: workPartNo = 1, 2, 3 중 3이 삭제 상태여도 새 파트는 3이 아니라 4로 생성된다.
+ - 이는 DB의 day_id + work_part_no 유니크 제약조건과 충돌하지 않기 위함이다.
+
 
 #### 정책
 
 - 확정된 주간 스케줄(`confirmed_week_schedule`)이 있어야만 추가할 수 있다.
 - `workDate`는 확정 스케줄이 바라보는 `week_schedule` 하위의 활성 `day.date` 중 하나여야 한다.
 - 아직 자동 스케줄 조건이 생성되지 않은 다다음주 이후 날짜 등은 추가할 수 없다.
-- 같은 `day` 안에 동일한 `workPartNo`의 활성 `time_detail`이 이미 있으면 추가할 수 없다.
+- workPartNo는 서버에서 자동 부여하므로 요청 Body에 포함하지 않는다.
+- 새 근무 파트의 workPartNo는 해당 날짜의 기존 time_detail.work_part_no 최댓값에 +1 하여 생성한다.
 - `workerMemberIds`는 중복될 수 없다.
 - 모든 `workerMemberIds`는 해당 사업장에 승인된 활성 근무자여야 한다.
+- workerMemberIds는 1명 이상이어야 한다.
 - `startTime`은 `closeTime`보다 빨라야 한다.
+- restTime은 0분 이상이어야 한다.
 
 ---
 
