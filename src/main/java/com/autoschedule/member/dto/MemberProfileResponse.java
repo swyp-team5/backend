@@ -2,6 +2,7 @@ package com.autoschedule.member.dto;
 
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.ProfileImage;
+import com.autoschedule.member.domain.SocialProvider;
 
 /**
  * 회원 본인의 프로필 조회/수정 응답 정보를 표현한다.
@@ -10,7 +11,8 @@ public record MemberProfileResponse(
         Long memberId,
         String name,
         String phoneNumber,
-        MemberProfileImageResponse profileImage
+        MemberProfileImageResponse profileImage,
+        SocialProvider socialProvider
 ) {
 
     /**
@@ -21,7 +23,8 @@ public record MemberProfileResponse(
                 member.getId(),
                 member.getName(),
                 member.getPhoneNumber(),
-                profileImage == null ? null : MemberProfileImageResponse.from(profileImage)
+                profileImage == null ? null : MemberProfileImageResponse.from(profileImage),
+                member.getSocialProvider()
         );
     }
 }
