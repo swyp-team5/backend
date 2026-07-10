@@ -12,6 +12,7 @@ import com.autoschedule.auth.jwt.JwtTokenProvider;
 import com.autoschedule.auth.jwt.TokenHashService;
 import com.autoschedule.auth.refresh.RefreshTokenSession;
 import com.autoschedule.auth.refresh.RefreshTokenStore;
+import com.autoschedule.auth.social.AppleSocialAuthProvider;
 import com.autoschedule.auth.social.SocialAuthCommand;
 import com.autoschedule.auth.social.SocialAuthProviderRegistry;
 import com.autoschedule.auth.social.SocialUserInfo;
@@ -63,6 +64,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final TokenHashService tokenHashService;
     private final SignupTermsPolicy signupTermsPolicy;
+    private final AppleSocialAuthProvider appleSocialAuthProvider;
 
     /**
      * 소셜 인증 정보를 검증하고 기존 회원이면 로그인 토큰을 발급한다.
@@ -89,7 +91,7 @@ public class AuthService {
      */
     @Transactional
     public AuthResponse signupOwner(OwnerSignupRequest request) {
-        SocialUserInfo socialUserInfo = authenticate(toCommand(
+        SocialUserInfo socialUserInfo = authenticateForSignup(toCommand(
                 request.provider(),
                 request.idToken(),
                 request.accessToken(),
@@ -122,7 +124,7 @@ public class AuthService {
      */
     @Transactional
     public AuthResponse signupWorker(WorkerSignupRequest request) {
-        SocialUserInfo socialUserInfo = authenticate(toCommand(
+        SocialUserInfo socialUserInfo = authenticateForSignup(toCommand(
                 request.provider(),
                 request.idToken(),
                 request.accessToken(),
@@ -216,6 +218,33 @@ public class AuthService {
     private SocialUserInfo authenticate(SocialAuthCommand command) {
         validateProviderTokenShape(command);
         return socialAuthProviderRegistry.get(command.provider()).authenticate(command);
+    }
+
+    /**
+     * 회원가입 완료 단계의 소셜 인증 정보를 검증한다.
+     *
+     * Apple은 social-login 단계에서 authorizationCode를 이미 검증하므로,
+     * signup 단계에서는 authorizationCode를 재검증하지 않고 identity token만 검증한다.
+     */
+    private SocialUserInfo authenticateForSignup(SocialAuthCommand command) {
+        validateProviderTokenShapeForSignup(command);
+
+        if (command.provider() == SocialProvider.APPLE) {
+            return appleSocialAuthProvider.authenticateForSignup(command);
+        }
+
+        return socialAuthProviderRegistry.get(command.provider()).authenticate(command);
+    }
+
+    /**
+     * 회원가입 완료 단계에서 제공자별 필수 토큰이 존재하는지 검증한다.
+     */
+    private void validateProviderTokenShapeForSignup(SocialAuthCommand command) {
+        switch (command.provider()) {
+            case GOOGLE -> requireText(command.idToken(), "Google idToken은 필수입니다.");
+            case KAKAO -> requireText(command.accessToken(), "Kakao accessToken은 필수입니다.");
+            case APPLE -> requireText(command.idToken(), "Apple idToken은 필수입니다.");
+        }
     }
 
     /**

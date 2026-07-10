@@ -79,6 +79,24 @@ public class AppleSocialAuthProvider implements SocialAuthProvider {
     }
 
     /**
+     * 회원가입 완료 단계에서는 Apple authorizationCode를 재검증하지 않고 identity token만 검증한다.
+     *
+     * Apple authorizationCode는 social-login 단계에서 이미 Apple token endpoint로 검증되며,
+     * 같은 authorizationCode를 signup 단계에서 다시 교환하면 실패할 수 있다.
+     */
+    public SocialUserInfo authenticateForSignup(SocialAuthCommand command) {
+        if (!StringUtils.hasText(command.idToken())) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "Apple idToken은 필수입니다.");
+        }
+
+        SocialAuthProperties.Apple apple = getConfiguredAppleProperties();
+        JWTClaimsSet identityClaims = verifyIdentityToken(command.idToken(), apple);
+
+        String email = getOptionalStringClaim(identityClaims, "email");
+        return new SocialUserInfo(SocialProvider.APPLE, identityClaims.getSubject(), email);
+    }
+
+    /**
      * Apple 설정값이 모두 존재하는지 확인하고 설정 객체를 반환한다.
      */
     private SocialAuthProperties.Apple getConfiguredAppleProperties() {
