@@ -6,6 +6,8 @@ import com.autoschedule.global.security.annotation.WorkerOnly;
 import com.autoschedule.schedule.dto.MyConfirmedScheduleResponse;
 import com.autoschedule.schedule.dto.OwnerConfirmedScheduleResponse;
 import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleResponse;
+import com.autoschedule.schedule.dto.WorkChangeTargetScheduleResponse;
+import com.autoschedule.schedule.dto.WorkerWeeklyConfirmedScheduleResponse;
 import com.autoschedule.schedule.service.ConfirmedScheduleQueryService;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
@@ -73,4 +75,41 @@ public class ConfirmedScheduleQueryController {
                 weekStartDate
         );
     }
+
+    /**
+     * 근무자가 교대/대타 대상을 선택할 수 있도록 소속 사업장의 주간 확정 근무표를 조회한다.
+     */
+    @WorkerOnly
+    @GetMapping("/api/work-places/{workPlaceId}/confirmed-schedules/weekly-workers")
+    public WorkerWeeklyConfirmedScheduleResponse getWorkerWeeklyConfirmedSchedules(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStartDate
+    ) {
+        return confirmedScheduleQueryService.getWorkerWeeklyConfirmedSchedules(
+                principal.memberId(),
+                workPlaceId,
+                weekStartDate
+        );
+    }
+
+    /**
+     * 근무자가 교대/대타 신청 대상을 선택할 수 있도록 확정 근무를 조회한다.
+     */
+    @WorkerOnly
+    @GetMapping("/api/work-places/{workPlaceId}/confirmed-schedules/work-change-targets")
+    public WorkChangeTargetScheduleResponse getWorkChangeTargetSchedules(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate
+    ) {
+        return confirmedScheduleQueryService.getWorkChangeTargetSchedules(
+                principal.memberId(),
+                workPlaceId,
+                fromDate,
+                toDate
+        );
+    }
+
 }

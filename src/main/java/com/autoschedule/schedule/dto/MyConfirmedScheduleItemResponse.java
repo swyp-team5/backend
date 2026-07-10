@@ -9,6 +9,7 @@ import java.time.LocalTime;
  * 근무자 본인 달력에 표시할 확정 근무 일정 단건 응답이다.
  */
 public record MyConfirmedScheduleItemResponse(
+        Long assignmentId,
         Long workPlaceId,
         String workPlaceName,
         LocalDate workDate,
@@ -29,6 +30,7 @@ public record MyConfirmedScheduleItemResponse(
             WorkPlace workPlace
     ) {
         return new MyConfirmedScheduleItemResponse(
+                assignment.getId(),
                 assignment.getWorkPlaceId(),
                 workPlace == null ? null : workPlace.getName(),
                 assignment.getDay().getDate(),

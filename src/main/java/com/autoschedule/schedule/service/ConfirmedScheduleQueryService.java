@@ -1,5 +1,9 @@
 package com.autoschedule.schedule.service;
 
+import com.autoschedule.crew.domain.CrewJoinStatus;
+import com.autoschedule.crew.domain.CrewRole;
+import com.autoschedule.crew.domain.CrewStatus;
+import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
@@ -18,6 +22,8 @@ import com.autoschedule.schedule.dto.OwnerConfirmedScheduleResponse;
 import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleDayResponse;
 import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleResponse;
 import com.autoschedule.schedule.dto.OwnerWeeklyConfirmedScheduleTimeDetailResponse;
+import com.autoschedule.schedule.dto.WorkChangeTargetScheduleResponse;
+import com.autoschedule.schedule.dto.WorkerWeeklyConfirmedScheduleResponse;
 import com.autoschedule.schedule.repository.ConfirmedScheduleAssignmentRepository;
 import com.autoschedule.schedule.repository.ConfirmedWeekScheduleRepository;
 import com.autoschedule.schedulecondition.domain.Day;
@@ -28,7 +34,9 @@ import com.autoschedule.schedulecondition.domain.WeekScheduleStatus;
 import com.autoschedule.workplace.domain.WorkPlace;
 import com.autoschedule.workplace.domain.WorkPlaceStatus;
 import com.autoschedule.workplace.repository.WorkPlaceRepository;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,6 +56,7 @@ public class ConfirmedScheduleQueryService {
 
     private final MemberRepository memberRepository;
     private final WorkPlaceRepository workPlaceRepository;
+    private final CrewRepository crewRepository;
     private final ProfileImageRepository profileImageRepository;
     private final ConfirmedScheduleAssignmentRepository confirmedScheduleAssignmentRepository;
     private final ConfirmedWeekScheduleRepository confirmedWeekScheduleRepository;
@@ -117,9 +126,7 @@ public class ConfirmedScheduleQueryService {
             Long workPlaceId,
             LocalDate weekStartDate
     ) {
-        if (weekStartDate == null) {
-            throw new ApiException(ErrorCode.INVALID_REQUEST, "조회 시작 날짜는 필수입니다.");
-        }
+        validateWeekStartDate(weekStartDate);
 
         findActiveMember(ownerMemberId);
         WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, ownerMemberId);
@@ -151,14 +158,94 @@ public class ConfirmedScheduleQueryService {
     }
 
     /**
-     * 조회 시작일과 종료일의 필수 여부와 순서를 검증한다.
+     * 근무자가 교대/대타 대상을 선택할 수 있도록 소속 사업장의 주간 확정 근무표를 조회한다.
      */
+    @Transactional(readOnly = true)
+    public WorkerWeeklyConfirmedScheduleResponse getWorkerWeeklyConfirmedSchedules(
+            Long workerMemberId,
+            Long workPlaceId,
+            LocalDate weekStartDate
+    ) {
+        validateWeekStartDate(weekStartDate);
+
+        findActiveMember(workerMemberId);
+        WorkPlace workPlace = findCrewActiveWorkPlace(workPlaceId, workerMemberId);
+        LocalDate weekEndDate = weekStartDate.plusDays(6);
+
+        List<OwnerWeeklyConfirmedScheduleDayResponse> days = findOwnerConfirmedScheduleDays(
+                workPlace.getId(),
+                weekStartDate,
+                weekEndDate
+        );
+
+        return WorkerWeeklyConfirmedScheduleResponse.of(
+                workPlace.getId(),
+                weekStartDate,
+                weekEndDate,
+                days
+        );
+    }
+
+    /**
+     * 근무자가 교대/대타 신청 대상을 선택할 수 있도록 신청 가능 기간의 확정 근무를 조회한다.
+     */
+    @Transactional(readOnly = true)
+    public WorkChangeTargetScheduleResponse getWorkChangeTargetSchedules(
+            Long workerMemberId,
+            Long workPlaceId,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        LocalDate today = LocalDate.now();
+        LocalDate resolvedFromDate = fromDate == null ? today : fromDate;
+        LocalDate resolvedToDate = toDate == null ? today.with(TemporalAdjusters.next(DayOfWeek.MONDAY)).plusDays(6) : toDate;
+
+        validateWorkChangeTargetDateRange(resolvedFromDate, resolvedToDate, today);
+        findActiveMember(workerMemberId);
+        WorkPlace workPlace = findCrewActiveWorkPlace(workPlaceId, workerMemberId);
+
+        List<OwnerWeeklyConfirmedScheduleDayResponse> days = findOwnerConfirmedScheduleDays(
+                workPlace.getId(),
+                resolvedFromDate,
+                resolvedToDate
+        );
+
+        return WorkChangeTargetScheduleResponse.of(
+                workPlace.getId(),
+                resolvedFromDate,
+                resolvedToDate,
+                days
+        );
+    }
+
     private void validateDateRange(LocalDate from, LocalDate to) {
         if (from == null || to == null) {
             throw new ApiException(ErrorCode.INVALID_REQUEST, "조회 시작일과 종료일은 필수입니다.");
         }
         if (from.isAfter(to)) {
             throw new ApiException(ErrorCode.INVALID_REQUEST, "조회 시작일은 종료일보다 늦을 수 없습니다.");
+        }
+    }
+
+    /**
+     * 주간 확정 스케줄 조회 기준일이 월요일인지 검증한다.
+     */
+    private void validateWeekStartDate(LocalDate weekStartDate) {
+        if (weekStartDate == null) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "조회 시작 날짜는 필수입니다.");
+        }
+        if (weekStartDate.getDayOfWeek() != DayOfWeek.MONDAY) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "주간 스케줄은 월요일부터 일요일까지의 기간으로만 조회할 수 있습니다.");
+        }
+    }
+
+    /**
+     * 교대/대타 대상 조회 기간이 오늘 이후이며 정상 범위인지 검증한다.
+     */
+    private void validateWorkChangeTargetDateRange(LocalDate fromDate, LocalDate toDate, LocalDate today) {
+        validateDateRange(fromDate, toDate);
+        if (fromDate.isBefore(today)) {
+            throw new ApiException(ErrorCode.INVALID_REQUEST, "교대/대타 대상 근무는 오늘 이후의 확정 근무만 조회할 수 있습니다.");
         }
     }
 
@@ -179,8 +266,27 @@ public class ConfirmedScheduleQueryService {
     }
 
     /**
-     * 사장용 기간 확정 근무표의 날짜별 응답 목록을 조회하고 조립한다.
+     * 근무자가 승인된 활성 크루로 속한 활성 사업장을 조회한다.
      */
+    private WorkPlace findCrewActiveWorkPlace(Long workPlaceId, Long workerMemberId) {
+        WorkPlace workPlace = workPlaceRepository
+                .findByIdAndStatusAndDeletedAtIsNull(workPlaceId, WorkPlaceStatus.ACTIVE)
+                .orElseThrow(() -> new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "사업장을 찾을 수 없습니다."));
+
+        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
+                workerMemberId,
+                workPlace.getId(),
+                CrewJoinStatus.APPROVED,
+                CrewRole.WORKER,
+                CrewStatus.ACTIVE
+        );
+        if (!exists) {
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "사업장을 찾을 수 없습니다.");
+        }
+
+        return workPlace;
+    }
+
     private List<OwnerWeeklyConfirmedScheduleDayResponse> findOwnerConfirmedScheduleDays(
             Long workPlaceId,
             LocalDate from,
@@ -314,6 +420,7 @@ public class ConfirmedScheduleQueryService {
                 .map(assignment -> {
                     Member member = membersById.get(assignment.getWorkerMemberId());
                     return ConfirmedScheduleWorkerResponse.from(
+                            assignment,
                             member,
                             profileImageUrlsByMemberId.get(assignment.getWorkerMemberId())
                     );

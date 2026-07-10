@@ -5048,6 +5048,7 @@ Authorization: Bearer {accessToken}
   "to": "2026-07-31",
   "schedules": [
     {
+      "assignmentId": 100,
       "workPlaceId": 1,
       "workPlaceName": "스위프",
       "workDate": "2026-07-06",
@@ -5117,6 +5118,7 @@ Authorization: Bearer {accessToken}
           "restTime": 0,
           "workers": [
             {
+              "assignmentId": 100,
               "memberId": 3,
               "name": "김철수",
               "profileImageUrl": "https://static.example.com/profile-images/3/profile.png"
@@ -5228,6 +5230,195 @@ Authorization: Bearer {accessToken}
 | 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
 | 403 | 4003 | OWNER가 아니거나 접근 권한 없음 |
 | 404 | 4004 | 사업장을 찾을 수 없음 |
+
+---
+
+---
+
+### 18-11. 근무자용 사업장 주간 확정 스케줄 조회 API
+
+근무자가 교대/대타 신청 대상을 선택하기 위해 자신이 승인된 크루로 속한 사업장의 주간 확정 근무표를 조회한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/confirmed-schedules/weekly-workers?weekStartDate={weekStartDate}` |
+| 권한 | WORKER |
+
+#### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+#### Query Parameter
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| weekStartDate | LocalDate | O | 조회할 주간 시작일 |
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "workPlaceId": 1,
+  "weekStartDate": "2026-07-06",
+  "weekEndDate": "2026-07-12",
+  "days": [
+    {
+      "workDate": "2026-07-06",
+      "dayName": "MONDAY",
+      "timeDetails": [
+        {
+          "timeDetailId": 10,
+          "timeName": "오픈",
+          "workPartNo": 1,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0,
+          "workers": [
+            {
+              "assignmentId": 100,
+              "memberId": 3,
+              "name": "김철수",
+              "profileImageUrl": "https://static.example.com/profile-images/3/profile.png"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 교대/대타 신청 연동 규칙
+
+- 근무자는 이 API에서 내려온 `assignmentId`를 교대/대타 신청 API에 사용한다.
+- 대타 신청 시 본인이 넘길 근무는 `requestAssignmentId`, 대신 근무할 대상자는 `targetMemberId`로 전달한다.
+- 교대 신청 시 본인의 근무는 `requestAssignmentId`, 상대방의 근무는 `targetAssignmentId`로 전달한다.
+- `workers[].memberId`는 대타 신청의 `targetMemberId`로 사용할 수 있다.
+- `workers[].assignmentId`는 교대 신청의 `targetAssignmentId`로 사용할 수 있다.
+- `profileImageUrl`은 활성 프로필 이미지가 있는 근무자에게만 내려간다.
+- 해당 주간에 확정 배정이 없으면 `days`는 빈 배열이다.
+
+#### 처리 규칙
+
+- 근무자만 호출할 수 있다.
+- 요청자는 해당 사업장에 승인된 활성 WORKER 크루로 소속되어 있어야 한다.
+- 조회 대상은 활성 `confirmed_week_schedule`, 활성 `confirmed_schedule_assignment`, 활성 `day`, 활성 `time_detail`만 포함한다.
+- 응답은 `workDate` 오름차순, `workPartNo` 오름차순, `startTime` 오름차순, 배정 ID 오름차순 기준으로 내려간다.
+
+#### 주요 에러
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4001 | 날짜 파라미터가 올바르지 않음 |
+| 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
+| 403 | 4003 | WORKER가 아니거나 접근 권한 없음 |
+| 404 | 4004 | 사업장을 찾을 수 없거나 승인된 활성 크루가 아님 |
+---
+
+### 18-12. 교대/대타 대상 확정 근무 조회 API
+
+근무자가 교대/대타를 신청하기 전에, 자신이 속한 사업장의 신청 가능한 확정 근무 목록을 조회한다.
+
+기존 `GET /api/work-places/{workPlaceId}/confirmed-schedules/weekly-workers`는 특정 주차를 월요일~일요일 단위로 표시하기 위한 조회 API다.
+교대/대타 신청 화면에서는 이번 주 남은 근무와 다음 주 확정 근무처럼 “신청일 이후 확정 근무”를 봐야 하므로 아래 전용 API를 사용한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | GET |
+| URL | `/api/work-places/{workPlaceId}/confirmed-schedules/work-change-targets?fromDate={fromDate}&toDate={toDate}` |
+| 권한 | WORKER |
+
+#### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+
+#### Query Parameter
+
+| 필드명 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| fromDate | LocalDate | X | 조회 시작일. 미입력 시 오늘 날짜 |
+| toDate | LocalDate | X | 조회 종료일. 미입력 시 오늘 기준 다음 주 일요일 |
+
+#### 처리 규칙
+
+- 근무자만 호출할 수 있다.
+- 요청자는 해당 사업장에 승인된 활성 WORKER 크루로 소속되어 있어야 한다.
+- `fromDate`는 오늘보다 과거일 수 없다.
+- `fromDate`가 `toDate`보다 늦을 수 없다.
+- 조회 대상은 활성 `confirmed_week_schedule`, 활성 `confirmed_schedule_assignment`, 활성 `day`, 활성 `time_detail`만 포함한다.
+- 응답은 `workDate` 오름차순, `workPartNo` 오름차순, `startTime` 오름차순, 배정 ID 오름차순으로 내려간다.
+- 응답의 `workers[].assignmentId`는 교대/대타 신청 API의 `requestAssignmentId` 또는 `targetAssignmentId`로 사용한다.
+- 응답의 `workers[].memberId`는 대타 신청 API의 `targetMemberId`로 사용할 수 있다.
+
+#### 성공 응답: 200 OK
+
+```json
+{
+  "workPlaceId": 1,
+  "fromDate": "2026-07-10",
+  "toDate": "2026-07-19",
+  "days": [
+    {
+      "workDate": "2026-07-13",
+      "dayName": "MONDAY",
+      "timeDetails": [
+        {
+          "timeDetailId": 10,
+          "timeName": "오픈",
+          "workPartNo": 1,
+          "startTime": "09:00:00",
+          "closeTime": "13:00:00",
+          "restTime": 0,
+          "workers": [
+            {
+              "assignmentId": 100,
+              "memberId": 3,
+              "name": "김철수",
+              "profileImageUrl": "https://static.example.com/profile-images/3/profile.png"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 교대/대타 신청 연동
+
+대타 신청:
+
+```json
+{
+  "requestAssignmentId": 100,
+  "targetMemberId": 4,
+  "reason": "개인 일정으로 대타 요청드립니다."
+}
+```
+
+교대 신청:
+
+```json
+{
+  "requestAssignmentId": 100,
+  "targetAssignmentId": 120,
+  "reason": "서로 근무 시간을 바꾸고 싶습니다."
+}
+```
+
+#### 주요 에러
+
+| HTTP | code | 상황 |
+| --- | --- | --- |
+| 400 | 4001 | 날짜 파라미터 오류, 과거 날짜 조회 요청 |
+| 401 | 4002 | 인증 정보 없음 또는 올바르지 않음 |
+| 403 | 4003 | WORKER 권한이 아님 |
+| 404 | 4004 | 사업장을 찾을 수 없거나 승인된 활성 크루가 아님 |
 
 ---
 

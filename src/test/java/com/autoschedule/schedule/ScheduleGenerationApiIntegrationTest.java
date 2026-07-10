@@ -705,10 +705,10 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 사장이 확정된 근무 파트를 수정하면 기존 time_detail과 배정은 삭제 처리되고 새 time_detail과 배정이 생성된다.
+     * 사장이 확정된 근무 파트를 수정하면 기존 time_detail row는 유지하고 배정만 교체한다.
      */
     @Test
-    void updateManualAssignment_replacesTimeDetailAndAssignments() throws Exception {
+    void updateManualAssignment_updatesSameTimeDetailAndReplacesAssignments() throws Exception {
         ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
         LocalDate workDate = morning.getDay().getDate();
 
@@ -728,10 +728,15 @@ class ScheduleGenerationApiIntegrationTest {
                                 }
                                 """.formatted(workDate, workerB.getId())))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timeDetailId").value(morning.getId()))
                 .andExpect(jsonPath("$.workPartNo").value(4))
                 .andExpect(jsonPath("$.workerMemberIds[0]").value(workerB.getId()));
 
-        assertThat(timeDetailRepository.findById(morning.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        TimeDetail updatedTimeDetail = timeDetailRepository.findById(morning.getId()).orElseThrow();
+        assertThat(updatedTimeDetail.getDeletedAt()).isNull();
+        assertThat(updatedTimeDetail.getWorkPartNo()).isEqualTo(4);
+        assertThat(updatedTimeDetail.getStartTime()).isEqualTo(LocalTime.of(10, 0));
+        assertThat(updatedTimeDetail.getCloseTime()).isEqualTo(LocalTime.of(14, 0));
 
         Integer deletedOldAssignmentCount = jdbcTemplate.queryForObject("""
                         select count(*)
@@ -746,11 +751,12 @@ class ScheduleGenerationApiIntegrationTest {
                         select csa.worker_member_id
                           from confirmed_schedule_assignment csa
                           join time_detail td on csa.time_detail_id = td.time_detail_id
-                         where td.work_part_no = 4
-                           and csa.status = 'ACTIVE'
-                           and csa.deleted_at is null
-                        """,
-                Long.class
+                         where td.time_detail_id = ?
+                            and csa.status = 'ACTIVE'
+                            and csa.deleted_at is null
+                         """,
+                Long.class,
+                morning.getId()
         );
 
         assertThat(deletedOldAssignmentCount).isEqualTo(1);
@@ -822,6 +828,7 @@ class ScheduleGenerationApiIntegrationTest {
                 .andExpect(jsonPath("$.from").value(from.toString()))
                 .andExpect(jsonPath("$.to").value(to.toString()))
                 .andExpect(jsonPath("$.schedules.length()").value(1))
+                .andExpect(jsonPath("$.schedules[0].assignmentId").exists())
                 .andExpect(jsonPath("$.schedules[0].workPlaceId").value(workPlace.getId()))
                 .andExpect(jsonPath("$.schedules[0].workPlaceName").value(workPlace.getName()))
                 .andExpect(jsonPath("$.schedules[0].workDate").value(workDate.toString()))
@@ -841,6 +848,11 @@ class ScheduleGenerationApiIntegrationTest {
     void getOwnerWeeklyConfirmedSchedules_returnsWorkPlaceAssignmentsGroupedByDayAndTimeDetail() throws Exception {
         saveActiveProfileImage(workerA, "https://static.example.com/worker-a.png");
         ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        List<ConfirmedScheduleAssignment> assignments = confirmedScheduleAssignmentRepository
+                .findByConfirmedWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByIdAsc(
+                        confirmed.getId(),
+                        ConfirmedScheduleAssignmentStatus.ACTIVE
+                );
         LocalDate weekStartDate = morning.getDay().getDate();
         LocalDate weekEndDate = weekStartDate.plusDays(6);
 
@@ -859,17 +871,133 @@ class ScheduleGenerationApiIntegrationTest {
                 .andExpect(jsonPath("$.days[0].timeDetails.length()").value(2))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].timeDetailId").value(morning.getId()))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].timeName").value("오픈"))
+                .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].assignmentId").value(assignments.get(0).getId()))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].memberId").value(workerA.getId()))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].name").value(workerA.getName()))
                 .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].profileImageUrl")
                         .value("https://static.example.com/worker-a.png"))
                 .andExpect(jsonPath("$.days[0].timeDetails[1].timeDetailId").value(evening.getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].assignmentId").value(assignments.get(1).getId()))
                 .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].memberId").value(workerB.getId()));
     }
 
     /**
-     * 사장은 임의 기간의 사업장 확정 스케줄을 날짜와 근무 파트별 근무자 목록으로 조회한다.
+     * 주간 확정 스케줄은 월요일부터 일요일까지의 1주 단위로만 조회할 수 있다.
      */
+    @Test
+    void getOwnerWeeklyConfirmedSchedules_failsWhenWeekStartDateIsNotMonday() throws Exception {
+        createConfirmedWeekSchedule();
+        LocalDate tuesday = morning.getDay().getDate().plusDays(1);
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/weekly", workPlace.getId())
+                        .param("weekStartDate", tuesday.toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("주간 스케줄은 월요일부터 일요일까지의 기간으로만 조회할 수 있습니다."));
+    }
+
+    /**
+     * 근무자는 승인된 크루로 속한 사업장의 주간 확정 스케줄을 조회해 교대/대타 대상 배정을 선택할 수 있다.
+     */
+    @Test
+    void getWorkerWeeklyConfirmedSchedules_returnsAssignmentsForWorkChangeRequest() throws Exception {
+        saveActiveProfileImage(workerB, "https://static.example.com/worker-b.png");
+        ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        List<ConfirmedScheduleAssignment> assignments = confirmedScheduleAssignmentRepository
+                .findByConfirmedWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByIdAsc(
+                        confirmed.getId(),
+                        ConfirmedScheduleAssignmentStatus.ACTIVE
+                );
+        LocalDate weekStartDate = morning.getDay().getDate();
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/weekly-workers", workPlace.getId())
+                        .param("weekStartDate", weekStartDate.toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(workerA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.weekStartDate").value(weekStartDate.toString()))
+                .andExpect(jsonPath("$.weekEndDate").value(weekStartDate.plusDays(6).toString()))
+                .andExpect(jsonPath("$.days.length()").value(1))
+                .andExpect(jsonPath("$.days[0].timeDetails.length()").value(2))
+                .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].assignmentId").value(assignments.get(0).getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].memberId").value(workerA.getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].assignmentId").value(assignments.get(1).getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].memberId").value(workerB.getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].profileImageUrl")
+                        .value("https://static.example.com/worker-b.png"));
+    }
+
+    /**
+     * 근무자는 승인된 크루로 속하지 않은 사업장의 주간 확정 스케줄을 조회할 수 없다.
+     */
+    @Test
+    void getWorkerWeeklyConfirmedSchedules_failsWhenWorkerIsNotActiveCrew() throws Exception {
+        createConfirmedWeekSchedule();
+        workerBCrew.deactivate(LocalDateTime.now());
+        crewRepository.save(workerBCrew);
+        LocalDate weekStartDate = morning.getDay().getDate();
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/weekly-workers", workPlace.getId())
+                        .param("weekStartDate", weekStartDate.toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(workerB)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getWorkChangeTargetSchedules_returnsConfirmedAssignmentsFromRequestedDateRange() throws Exception {
+        saveActiveProfileImage(workerB, "https://static.example.com/worker-b.png");
+        ConfirmedWeekSchedule confirmed = createConfirmedWeekSchedule();
+        List<ConfirmedScheduleAssignment> assignments = confirmedScheduleAssignmentRepository
+                .findByConfirmedWeekSchedule_IdAndStatusAndDeletedAtIsNullOrderByIdAsc(
+                        confirmed.getId(),
+                        ConfirmedScheduleAssignmentStatus.ACTIVE
+                );
+        LocalDate fromDate = morning.getDay().getDate();
+        LocalDate toDate = fromDate.plusDays(6);
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/work-change-targets", workPlace.getId())
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", toDate.toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(workerA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.fromDate").value(fromDate.toString()))
+                .andExpect(jsonPath("$.toDate").value(toDate.toString()))
+                .andExpect(jsonPath("$.days.length()").value(1))
+                .andExpect(jsonPath("$.days[0].workDate").value(fromDate.toString()))
+                .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].assignmentId").value(assignments.get(0).getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[0].workers[0].memberId").value(workerA.getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].assignmentId").value(assignments.get(1).getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].memberId").value(workerB.getId()))
+                .andExpect(jsonPath("$.days[0].timeDetails[1].workers[0].profileImageUrl")
+                        .value("https://static.example.com/worker-b.png"));
+    }
+
+    @Test
+    void getWorkChangeTargetSchedules_failsWhenWorkerIsNotActiveCrew() throws Exception {
+        createConfirmedWeekSchedule();
+        workerBCrew.deactivate(LocalDateTime.now());
+        crewRepository.save(workerBCrew);
+        LocalDate fromDate = morning.getDay().getDate();
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/work-change-targets", workPlace.getId())
+                        .param("fromDate", fromDate.toString())
+                        .param("toDate", fromDate.plusDays(6).toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(workerB)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getWorkChangeTargetSchedules_failsWhenFromDateIsPast() throws Exception {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+
+        mockMvc.perform(get("/api/work-places/{workPlaceId}/confirmed-schedules/work-change-targets", workPlace.getId())
+                        .param("fromDate", yesterday.toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(workerA)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("교대/대타 대상 근무는 오늘 이후의 확정 근무만 조회할 수 있습니다."));
+    }
+
     @Test
     void getOwnerConfirmedSchedules_returnsWorkPlaceAssignmentsForDateRange() throws Exception {
         saveActiveProfileImage(workerA, "https://static.example.com/worker-a.png");
