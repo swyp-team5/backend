@@ -108,6 +108,13 @@ public class NoticeImage extends BaseEntity {
     }
 
     /**
+     * 이미 공지에 연결된 활성 이미지의 노출 순서를 변경한다.
+     */
+    public void changeDisplayOrder(int displayOrder) {
+        this.displayOrder = displayOrder;
+    }
+
+    /**
      * 이미지 row를 삭제 상태로 전환한다.
      */
     public void markDeleted(LocalDateTime deletedAt) {

@@ -2191,16 +2191,47 @@ Content-Type: application/json
 OWNER
 ```
 
-요청 본문은 `title`, `content`, `representative`만 받는다.
-공지 수정 API는 현재 이미지 추가, 교체, 삭제를 처리하지 않는다.
-응답 형식은 `8.2 사업장 공지 작성` 성공 응답과 동일하며, 기존에 연결된 활성 이미지는 `images` 배열에 포함된다.
+#### 요청 Body
+
+```json
+{
+  "title": "수정된 공지 제목",
+  "content": "수정된 공지 내용",
+  "representative": true,
+  "imageObjectKeys": [
+    "notice-images/3/1/new-image-1.png",
+    "notice-images/3/1/existing-image-2.png"
+  ]
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| title | string | Y | 공지 제목. 최대 100자 |
+| content | string | Y | 공지 내용. 최대 5000자 |
+| representative | boolean | Y | 대표 공지 여부 |
+| imageObjectKeys | string[] | N | 수정 완료 후 최종 공지 이미지 object key 목록. 최대 5개 |
+
+#### 성공 응답
+
+응답 형식은 `8.2 사업장 공지 작성` 성공 응답과 동일하며, 수정 후 최종 이미지 목록이 `images` 배열에 포함된다.
+
+#### 이미지 수정 정책
+
+- `imageObjectKeys` 필드를 보내지 않으면 기존 이미지 목록을 변경하지 않는다.
+- `imageObjectKeys: []`를 보내면 기존 이미지를 모두 삭제한다.
+- `imageObjectKeys`에 기존 활성 이미지 object key를 포함하면 해당 이미지를 유지하고 배열 순서대로 노출 순서를 갱신한다.
+- `imageObjectKeys`에 새 PENDING 이미지 object key를 포함하면 S3 실제 객체 검증 후 공지에 연결한다.
+- 기존 활성 이미지 중 `imageObjectKeys`에 포함되지 않은 이미지는 삭제 처리된다.
+- `imageObjectKeys` 순서가 공지 이미지 노출 순서가 된다.
+- 같은 요청 안에서 동일한 object key를 중복해서 보낼 수 없다.
 
 #### 주요 비즈니스 규칙
 
 - 사장님만 수정할 수 있다.
 - 사장님 본인이 소유한 사업장의 공지만 수정할 수 있다.
+- 공지 작성자 본인만 수정할 수 있다.
 - 수정으로 대표 공지를 지정하면 같은 사업장의 기존 대표 공지는 자동 해제된다.
-
 ### 8.11 공지 삭제
 
 ```http

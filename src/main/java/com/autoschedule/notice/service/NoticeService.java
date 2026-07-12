@@ -233,13 +233,19 @@ public class NoticeService {
     public NoticeResponse updateNotice(Long ownerMemberId, Long noticeId, NoticeUpdateRequest request) {
         Member owner = findActiveMember(ownerMemberId);
         Notice notice = findActiveNotice(noticeId);
-        validateOwnedActiveWorkPlace(notice.getWorkPlace().getId(), owner.getId());
+        WorkPlace workPlace = findOwnedActiveWorkPlace(notice.getWorkPlace().getId(), owner.getId());
         validateNoticeWriter(notice, owner.getId());
 
         notice.update(request.title(), request.content(), request.representative());
         applyRepresentativePolicy(notice);
+        List<NoticeImageResponse> images = noticeImageService.replaceImagesForNotice(
+                notice,
+                workPlace,
+                owner.getId(),
+                request.imageObjectKeys()
+        );
 
-        return NoticeResponse.from(notice, owner.getName(), noticeImageService.findActiveImages(notice.getId()), null, List.of());
+        return NoticeResponse.from(notice, owner.getName(), images, null, List.of());
     }
 
     /**

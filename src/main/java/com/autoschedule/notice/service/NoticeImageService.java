@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -168,6 +169,71 @@ public class NoticeImageService {
                         image -> image.getNotice().getId(),
                         Collectors.mapping(NoticeImageResponse::from, Collectors.toList())
                 ));
+    }
+
+    /**
+     * 공지 수정 요청의 object key 목록을 수정 후 최종 이미지 목록으로 해석해 이미지 연결 상태를 갱신한다.
+     */
+    public List<NoticeImageResponse> replaceImagesForNotice(
+            Notice notice,
+            WorkPlace workPlace,
+            Long ownerMemberId,
+            List<String> objectKeys
+    ) {
+        if (objectKeys == null) {
+            return findActiveImages(notice.getId());
+        }
+
+        noticeImageValidator.validateImageCount(objectKeys.size());
+        validateNoDuplicateObjectKeys(objectKeys);
+
+        List<NoticeImage> activeImages = noticeImageRepository
+                .findByNotice_IdAndStatusAndDeletedAtIsNullOrderByDisplayOrderAscIdAsc(
+                        notice.getId(),
+                        NoticeImageStatus.ACTIVE
+                );
+        Map<String, NoticeImage> activeImagesByObjectKey = activeImages.stream()
+                .collect(Collectors.toMap(NoticeImage::getObjectKey, Function.identity()));
+
+        List<NoticeImageResponse> responses = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+        for (int index = 0; index < objectKeys.size(); index++) {
+            String objectKey = objectKeys.get(index);
+            NoticeImage activeImage = activeImagesByObjectKey.remove(objectKey);
+            int displayOrder = index + 1;
+            if (activeImage != null) {
+                activeImage.changeDisplayOrder(displayOrder);
+                responses.add(NoticeImageResponse.from(activeImage));
+                continue;
+            }
+
+            validateOwnedObjectKey(workPlace.getId(), ownerMemberId, objectKey);
+            NoticeImage pendingImage = findPendingImage(ownerMemberId, objectKey);
+            validatePendingImageNotExpired(pendingImage);
+
+            try {
+                NoticeImageObjectMetadata metadata = noticeImageStorage.getObjectMetadata(objectKey);
+                noticeImageValidator.validateActualImage(metadata.contentType(), metadata.fileSize(), metadata.firstBytes());
+                pendingImage.activate(
+                        notice,
+                        noticeImageValidator.normalizeContentType(metadata.contentType()),
+                        metadata.fileSize(),
+                        displayOrder,
+                        now
+                );
+                responses.add(NoticeImageResponse.from(pendingImage));
+            } catch (ApiException exception) {
+                pendingImage.markDeleted(now);
+                deleteObjectAfterCommit(objectKey);
+                throw exception;
+            }
+        }
+
+        for (NoticeImage removedImage : activeImagesByObjectKey.values()) {
+            removedImage.markDeleted(now);
+            deleteObjectAfterCommit(removedImage.getObjectKey());
+        }
+        return responses;
     }
 
     /**

@@ -702,6 +702,76 @@ class NoticeApiIntegrationTest {
      * 사업장 소유자라도 공지 작성자가 아니면 공지를 수정할 수 없다.
      */
     @Test
+    void ownerUpdatesNoticeImagesAsFinalObjectKeyList() throws Exception {
+        when(noticeImageStorage.createUploadUrl(any()))
+                .thenAnswer(invocation -> {
+                    com.autoschedule.notice.dto.NoticeImageUploadTarget target = invocation.getArgument(0);
+                    return new NoticeImageUploadUrl(
+                            "https://s3.example.com/upload",
+                            target.objectKey(),
+                            target.storedFileName(),
+                            java.util.Map.of("Content-Type", "image/png"),
+                            300
+                    );
+                });
+        when(noticeImageStorage.getObjectMetadata(any()))
+                .thenReturn(new NoticeImageObjectMetadata(
+                        "image/png",
+                        1024,
+                        new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47}
+                ));
+
+        String oldObjectKey = uploadNoticeImageObjectKey("old-notice-image.png");
+        JsonNode notice = objectMapper.readTree(mockMvc.perform(post("/api/work-places/{workPlaceId}/notices", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(noticeBodyWithImages(
+                                "notice with old image",
+                                "content with old image",
+                                false,
+                                oldObjectKey
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.images.length()").value(1))
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        long noticeId = notice.get("noticeId").asLong();
+        String newObjectKey = uploadNoticeImageObjectKey("new-notice-image.png");
+
+        mockMvc.perform(patch("/api/notices/{noticeId}", noticeId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "notice with new image",
+                                  "content": "content with new image",
+                                  "representative": false,
+                                  "imageObjectKeys": ["%s"]
+                                }
+                                """.formatted(newObjectKey)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.images.length()").value(1))
+                .andExpect(jsonPath("$.images[0].objectKey").value(newObjectKey))
+                .andExpect(jsonPath("$.images[0].displayOrder").value(1));
+
+        Integer oldDeletedCount = jdbcTemplate.queryForObject(
+                "select count(*) from notice_image where notice_id = ? and object_key = ? and status = 'DELETED'",
+                Integer.class,
+                noticeId,
+                oldObjectKey
+        );
+        Integer newActiveCount = jdbcTemplate.queryForObject(
+                "select count(*) from notice_image where notice_id = ? and object_key = ? and status = 'ACTIVE'",
+                Integer.class,
+                noticeId,
+                newObjectKey
+        );
+        assertThat(oldDeletedCount).isOne();
+        assertThat(newActiveCount).isOne();
+    }
+
+    @Test
     void ownerCannotUpdateNoticeWrittenByAnotherOwner() throws Exception {
         Member anotherOwner = memberRepository.save(Member.create(
                 SocialProvider.GOOGLE,
@@ -1061,6 +1131,25 @@ class NoticeApiIntegrationTest {
                   "imageObjectKeys": ["%s"]
                 }
                 """.formatted(title, content, representative, objectKey);
+    }
+
+    private String uploadNoticeImageObjectKey(String originalFileName) throws Exception {
+        String uploadResponse = mockMvc.perform(post("/api/work-places/{workPlaceId}/notice-images/upload-url", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "originalFileName": "%s",
+                                  "contentType": "image/png",
+                                  "fileSize": 1024
+                                }
+                                """.formatted(originalFileName)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.objectKey").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(uploadResponse).get("objectKey").asText();
     }
 
     private String commentBody(String content) {
