@@ -84,7 +84,6 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
               join fetch crew.member member
              where crew.workPlace.id = :workPlaceId
                and crew.joinStatus = :joinStatus
-               and crew.crewRole = :crewRole
                and crew.status = :status
                and crew.deletedAt is null
                and member.status = com.autoschedule.member.domain.MemberStatus.ACTIVE
@@ -93,7 +92,6 @@ public interface CrewRepository extends JpaRepository<Crew, Long> {
     List<Crew> findActiveApprovedWorkersWithMember(
             @Param("workPlaceId") Long workPlaceId,
             @Param("joinStatus") CrewJoinStatus joinStatus,
-            @Param("crewRole") CrewRole crewRole,
             @Param("status") CrewStatus status
     );
 

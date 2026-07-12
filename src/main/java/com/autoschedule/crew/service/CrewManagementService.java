@@ -146,7 +146,6 @@ public class CrewManagementService {
         return crewRepository.findActiveApprovedWorkersWithMember(
                 workPlaceId,
                 CrewJoinStatus.APPROVED,
-                CrewRole.WORKER,
                 CrewStatus.ACTIVE
         );
     }

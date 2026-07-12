@@ -1,6 +1,7 @@
 package com.autoschedule.crew.dto;
 
 import com.autoschedule.crew.domain.Crew;
+import com.autoschedule.crew.domain.CrewRole;
 
 /**
  * 근무자에게 노출되는 사업장 근무자 제한 정보 응답이다.
@@ -8,6 +9,7 @@ import com.autoschedule.crew.domain.Crew;
 public record WorkerCrewMemberResponse(
         Long crewId,
         Long memberId,
+        CrewRole crewRole,
         String name,
         String profileImageUrl
 ) implements CrewMemberResponse {
@@ -19,6 +21,7 @@ public record WorkerCrewMemberResponse(
         return new WorkerCrewMemberResponse(
                 crew.getId(),
                 crew.getMember().getId(),
+                crew.getCrewRole(),
                 crew.getMember().getName(),
                 profileImageUrl
         );
