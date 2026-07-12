@@ -1,4 +1,4 @@
-# AutoSchedule API 명세서
+﻿# AutoSchedule API 명세서
 
 ## 1. 문서 범위
 
@@ -1112,17 +1112,19 @@ Authorization: Bearer {OWNER_ACCESS_TOKEN}
   "workPlaceId": 10,
   "inviteCode": "839204",
   "inviteUrl": "chack-chack://crew-invitations/839204",
+  "inviteShareUrl": "https://chackchack.shop/crew-invitations/123456",
   "expiresAt": "2026-06-13T15:00:00"
 }
 ```
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| invitationId | number | 크루 초대 ID |
-| workPlaceId | number | 사업장 ID |
-| inviteCode | string | 6자리 숫자 초대 코드 |
-| inviteUrl | string | 앱 딥링크 초대 URL |
-| expiresAt | string | 초대 코드 만료 시각 |
+| 필드 | 타입 | 설명                    |
+| --- | --- |-----------------------|
+| invitationId | number | 크루 초대 ID              |
+| workPlaceId | number | 사업장 ID                |
+| inviteCode | string | 6자리 숫자 초대 코드          |
+| inviteUrl | string | 앱 딥링크 초대 URL          |
+| inviteShareUrl | string | Android용 HTTPS 초대 URL |
+| expiresAt | string | 초대 코드 만료 시각           |
 
 #### 주요 비즈니스 규칙
 
@@ -1401,6 +1403,7 @@ Authorization: Bearer {ACCESS_TOKEN}
     {
       "crewId": 20,
       "memberId": 7,
+      "crewRole": "WORKER",
       "name": "이세령",
       "profileImageUrl": "https://static.example.com/profile-images/7/profile.png"
     }
@@ -1408,11 +1411,12 @@ Authorization: Bearer {ACCESS_TOKEN}
 }
 ```
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| crews[].crewId | number | 사업장 크루 ID |
-| crews[].memberId | number | 근무자 회원 ID |
-| crews[].name | string | 근무자 이름 |
+| 필드 | 타입          | 설명                          |
+| --- |-------------|-----------------------------|
+| crews[].crewId | number      | 사업장 크루 ID                   |
+| crews[].memberId | number      | 근무자 회원 ID                   |
+| crews[].crewRole | string      | crew 권한                     |
+| crews[].name | string      | 근무자 이름                      |
 | crews[].profileImageUrl | string/null | 근무자 프로필 이미지 URL. 없으면 `null` |
 
 #### 주요 비즈니스 규칙
@@ -1420,7 +1424,7 @@ Authorization: Bearer {ACCESS_TOKEN}
 - 목록에는 `APPROVED / WORKER / ACTIVE` 상태이고 `deleted_at is null`인 크루만 포함한다.
 - 사장님은 본인이 소유한 활성 사업장의 근무자 목록만 조회할 수 있다.
 - 근무자는 본인이 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장의 근무자 목록만 조회할 수 있다.
-- OWNER 크루는 근무자 목록에 포함하지 않는다.
+- OWNER 크루도 포함하여 해당 사업장의 모든 인원을 조회한다.
 - 백엔드는 `crew`와 `member`를 fetch join으로 조회하고, 활성 프로필 이미지는 `memberId IN (...)`으로 한 번에 조회해 N+1 쿼리를 방지한다.
 
 #### 주요 에러
