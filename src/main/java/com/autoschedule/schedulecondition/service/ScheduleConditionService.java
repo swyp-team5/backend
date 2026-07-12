@@ -505,6 +505,15 @@ public class ScheduleConditionService {
             );
         }
 
+        // 선택제한 일자는 holidayStatus, groupingId 값과 무관하게 timeDetail이 반드시 있어야 함
+        if (dayRequest.selectLimitStatus()
+                && (dayRequest.timeDetails() == null || dayRequest.timeDetails().isEmpty())) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "선택제한 일자는 근무 상세 시간이 설정되어 있어야 선택할 수 있습니다."
+            );
+        }
+
         if (dayRequest.holidayStatus()) {
             if (dayRequest.timeDetails() != null && !dayRequest.timeDetails().isEmpty()) {
                 throw new ApiException(
