@@ -44,4 +44,12 @@ public interface WorkerUnavailableTimeDetailRepository extends JpaRepository<Wor
             @Param("deletedStatus") WorkerUnavailableTimeDetailStatus deletedStatus,
             @Param("deletedAt") LocalDateTime deletedAt
     );
+
+    /**
+     * 특정 제출 건에 속한 근무 불가 time_detail을 물리 삭제한다.
+     * 반려 시 유니크 제약(work_place_id, week_schedule_id, member_id)을 비워 재제출을 가능하게 하기 위해 사용한다.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from WorkerUnavailableTimeDetail detail where detail.submission.id = :submissionId")
+    void deleteBySubmissionId(@Param("submissionId") Long submissionId);
 }

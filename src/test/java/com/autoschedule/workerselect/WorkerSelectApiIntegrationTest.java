@@ -652,8 +652,248 @@ class WorkerSelectApiIntegrationTest {
     }
 
     // ─────────────────────────────────────────────
+    // 반려 API - 정상 케이스
+    // ─────────────────────────────────────────────
+
+    /**
+     * 사장이 근무자의 제출 건을 반려하면 200을 반환하고 workPlaceId, weekScheduleId, memberId를 응답에 포함한다.
+     */
+    @Test
+    void rejectWorkerSelect_success() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.workPlaceId").value(workPlace.getId()))
+                .andExpect(jsonPath("$.weekScheduleId").value(weekSchedule.getId()))
+                .andExpect(jsonPath("$.memberId").value(worker.getId()));
+    }
+
+    /**
+     * 반려되면 submission과 연관된 time_detail이 모두 DELETED 상태로 변경된다.
+     */
+    @Test
+    void rejectWorkerSelect_deletesSubmissionAndTimeDetailsInDatabase() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        List<WorkerSelectSubmission> before = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(), weekSchedule.getId(), List.of(worker.getId()),
+                        WorkerSelectSubmissionStatus.ACTIVE
+                );
+        Long submissionId = before.get(0).getId();
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk());
+
+        // submission은 물리 삭제되어 더 이상 조회되지 않는다
+        List<WorkerSelectSubmission> after = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(), weekSchedule.getId(), List.of(worker.getId()),
+                        WorkerSelectSubmissionStatus.ACTIVE
+                );
+        assertThat(after).isEmpty();
+
+        // time_detail도 물리 삭제된다
+        Integer activeDetailCount = jdbcTemplate.queryForObject(
+                "select count(*) from worker_unavailable_time_detail "
+                        + "where worker_select_submission_id = ? and status = 'ACTIVE'",
+                Integer.class,
+                submissionId
+        );
+        assertThat(activeDetailCount).isZero();
+    }
+
+    /**
+     * 반려 이후 근무자는 근무 불가 시간을 다시 제출할 수 있다.
+     */
+    @Test
+    void rejectWorkerSelect_allowsResubmissionAfterReject() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithTimeDetails(List.of(timeDetail.getId()))))
+                .andExpect(status().isCreated());
+    }
+
+    /**
+     * 반려되면 근무자에게 재제출을 유도하는 알림이 저장된다.
+     */
+    @Test
+    void rejectWorkerSelect_sendsNotificationToWorker() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk());
+
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "select count(*) from notification "
+                        + "where receiver_member_id = ? and notification_type = 'WORKER_SELECT_REJECTED'",
+                Integer.class,
+                worker.getId()
+        );
+        assertThat(notificationCount).isEqualTo(1);
+    }
+
+    // ─────────────────────────────────────────────
+    // 반려 API - 실패 케이스
+    // ─────────────────────────────────────────────
+
+    /**
+     * 근무자가 제출한 적 없으면 404를 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenSubmissionNotFound() throws Exception {
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 이미 반려된 제출 건을 다시 반려하면 404를 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenAlreadyRejected() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 반려 대상 회원이 해당 사업장의 근무자 크루가 아니면 404를 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenTargetNotCrewMember() throws Exception {
+        Member otherWorker = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE,
+                "reject-other-worker-subject",
+                "reject-other-worker@test.com",
+                "다른근무자",
+                "01099990000",
+                MemberRole.WORKER
+        ));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), otherWorker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 사업장 소유자가 아닌 사장이 반려를 요청하면 403을 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenNotOwnerOfWorkPlace() throws Exception {
+        Member otherOwner = memberRepository.save(Member.create(
+                SocialProvider.GOOGLE,
+                "reject-other-owner-subject",
+                "reject-other-owner@test.com",
+                "다른사장",
+                "01088880000",
+                MemberRole.OWNER
+        ));
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(otherOwner)))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 근무자 권한으로 반려를 요청하면 403을 반환한다. (@OwnerOnly)
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenWorkerRequests() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 존재하지 않는 workPlaceId로 반려를 요청하면 404를 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenWorkPlaceNotFound() throws Exception {
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        99999L, weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 존재하지 않는 weekScheduleId로 반려를 요청하면 404를 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenWeekScheduleNotFound() throws Exception {
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), 99999L, worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 인증 토큰 없이 반려를 요청하면 401을 반환한다.
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenNoToken() throws Exception {
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ─────────────────────────────────────────────
     // 헬퍼 메서드
     // ─────────────────────────────────────────────
+
+    /**
+     * 근무자가 주어진 timeDetailIds로 근무 불가 시간을 제출한다. (반려 테스트의 사전 상태 준비용)
+     */
+    private void submitUnavailable(Member submittingWorker, List<Long> timeDetailIds) throws Exception {
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/worker-select", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(submittingWorker))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buildRequestWithTimeDetails(timeDetailIds)))
+                .andExpect(status().isCreated());
+    }
 
     /**
      * timeDetailIds 목록으로 요청 JSON을 생성한다.

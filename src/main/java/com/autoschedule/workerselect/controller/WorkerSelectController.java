@@ -3,6 +3,7 @@ package com.autoschedule.workerselect.controller;
 
 import com.autoschedule.auth.jwt.JwtAuthenticationPrincipal;
 import com.autoschedule.global.security.annotation.OwnerOnly;
+import com.autoschedule.workerselect.dto.WorkerSelectRejectionResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectStatusResponse;
 import org.springframework.validation.annotation.Validated;
 import com.autoschedule.global.security.annotation.WorkerOnly;
@@ -57,6 +58,25 @@ public class WorkerSelectController {
                 principal.memberId(),
                 workPlaceId,
                 weekScheduleId
+        );
+    }
+
+    /**
+     * 사장이 근무자의 근무 불가 제출 건을 반려한다.
+     */
+    @OwnerOnly
+    @PostMapping("/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject")
+    public WorkerSelectRejectionResponse rejectWorkerSelect(
+            @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
+            @PathVariable Long workPlaceId,
+            @PathVariable Long weekScheduleId,
+            @PathVariable Long memberId
+    ) {
+        return workerSelectService.rejectWorkerSelect(
+                principal.memberId(),
+                workPlaceId,
+                weekScheduleId,
+                memberId
         );
     }
 
