@@ -4705,6 +4705,113 @@ Authorization: Bearer {accessToken}
 
 ---
 
+### 17-3. 근무 불가 제출 반려 API
+
+### API 개요
+
+사장이 근무자가 제출한 근무 불가 시간 제출 건을 반려한다.
+
+반려되면 `worker_select_submission`과 연관된 `worker_unavailable_time_detail` 데이터가 모두 삭제되며, 해당 근무자는 근무 불가 시간을 다시 제출할 수 있게 된다. 반려 시 근무자에게 재제출을 유도하는 알림이 발송된다.
+
+---
+
+### API 정보
+
+| 항목 | 내용 |
+| --- | --- |
+| Method | POST |
+| URL | `/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject` |
+| 권한 | OWNER |
+| 설명 | 사장이 근무자의 근무 불가 제출 건을 반려한다. |
+
+---
+
+### Path Variable
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+| weekScheduleId | Long | 주차 스케줄 ID |
+| memberId | Long | 반려 대상 근무자 회원 ID |
+
+---
+
+### Header
+
+```
+Authorization: Bearer {accessToken}
+```
+
+---
+
+### Response
+
+### 성공 응답 (200 OK)
+
+```json
+{
+  "workPlaceId": 1,
+  "weekScheduleId": 2,
+  "memberId": 3
+}
+```
+
+---
+
+#### Response 필드 설명
+
+| 필드명 | 타입 | 설명 |
+| --- | --- | --- |
+| workPlaceId | Long | 사업장 ID |
+| weekScheduleId | Long | 주차 스케줄 ID |
+| memberId | Long | 반려된 근무자 회원 ID |
+
+---
+
+### 검증 순서
+
+1. 사장 회원 및 사업장 소유권 검증
+2. 주차 스케줄 존재 검증
+3. memberId가 해당 사업장의 승인된 WORKER 크루인지 검증
+4. 해당 근무자의 제출 정보(worker_select_submission)가 존재하는지 검증
+5. 검증 통과 시 submission과 연관된 worker_unavailable_time_detail을 모두 삭제 처리
+
+---
+
+### 주요 에러
+
+| HTTP Status | 메시지 |
+| --- | --- |
+| 401 | 인증 정보가 올바르지 않습니다. |
+| 403 | 권한이 없습니다. |
+| 404 | 사업장을 찾을 수 없습니다. |
+| 404 | 해당 주간의 스케줄 조건을 찾을 수 없습니다. |
+| 404 | 해당 사업장의 근무자를 찾을 수 없습니다. |
+| 404 | 해당 근무자의 제출 정보를 찾을 수 없습니다. |
+
+---
+
+### Error Response 예시
+
+```json
+{
+  "code": "4004",
+  "message": "해당 근무자의 제출 정보를 찾을 수 없습니다.",
+  "errors": [],
+  "path": "/api/work-places/1/week-schedules/2/worker-select/3/reject",
+  "timestamp": "2026-07-14T14:30:00"
+}
+```
+
+---
+
+### 참고 사항
+
+- 반려된 제출 건은 소프트 삭제가 아닌 **물리 삭제**로 처리된다. `worker_select_submission` 테이블에 `(work_place_id, week_schedule_id, member_id)` 유니크 제약이 걸려 있어, 소프트 삭제 시 재제출 과정에서 DB 유니크 충돌이 발생하기 때문이다.
+- 이미 반려된(=이미 삭제된) 제출 건을 다시 반려하려는 요청은 "해당 근무자의 제출 정보를 찾을 수 없습니다." 404 에러로 처리된다.
+
+---
+
 ## 18. 자동 스케줄 생성/미리보기/확정 API
 
 ### 18-1. 자동 스케줄 생성 API
