@@ -25,7 +25,7 @@ public record WeekScheduleCreateRequest(
         Integer minPersonalWorkCount,
 
         @NotNull(message = "최대 근무 횟수는 필수입니다.")
-        @Max(value = 7, message = "최대 근무 횟수는 7 이하여야 합니다.")
+        @Min(value = 1, message = "최대 근무 횟수는 1 이상이어야 합니다.")
         Integer maxPersonalWorkCount,
 
         @NotNull(message = "제출 마감일은 필수입니다.")
