@@ -18,7 +18,7 @@ spring:
   sql:
     init:
       mode: always
-      schema-locations: classpath:db/DDL_TEST_RESET.sql,classpath:db/DDL_V8.sql
+      schema-locations: classpath:db/DDL_TEST_RESET.sql,classpath:db/DDL_V9.sql
 
 logging:
   level:

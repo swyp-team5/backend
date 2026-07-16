@@ -38,4 +38,12 @@ public interface SchedulePreviewRepository extends JpaRepository<SchedulePreview
             Collection<Long> scheduleGenerationRunIds,
             SchedulePreviewStatus status
     );
+
+    /**
+     * 특정 주간 스케줄에 활성 미리보기 스냅샷이 존재하는지 확인한다.
+     */
+    boolean existsByWeekSchedule_IdAndStatusAndDeletedAtIsNull(
+            Long weekScheduleId,
+            SchedulePreviewStatus status
+    );
 }

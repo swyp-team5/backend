@@ -752,9 +752,112 @@ class WorkerSelectApiIntegrationTest {
         assertThat(notificationCount).isEqualTo(1);
     }
 
+    /**
+     * 반려 알림의 data payload에는 workPlaceId와 weekScheduleId가 함께 포함된다.
+     */
+    @Test
+    void rejectWorkerSelect_notificationPayloadIncludesWeekScheduleId() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk());
+
+        String workPlaceIdValue = jdbcTemplate.queryForObject(
+                "select JSON_UNQUOTE(JSON_EXTRACT(data, '$.workPlaceId')) from notification "
+                        + "where receiver_member_id = ? and notification_type = 'WORKER_SELECT_REJECTED'",
+                String.class,
+                worker.getId()
+        );
+        String weekScheduleIdValue = jdbcTemplate.queryForObject(
+                "select JSON_UNQUOTE(JSON_EXTRACT(data, '$.weekScheduleId')) from notification "
+                        + "where receiver_member_id = ? and notification_type = 'WORKER_SELECT_REJECTED'",
+                String.class,
+                worker.getId()
+        );
+
+        assertThat(workPlaceIdValue).isEqualTo(String.valueOf(workPlace.getId()));
+        assertThat(weekScheduleIdValue).isEqualTo(String.valueOf(weekSchedule.getId()));
+    }
+
+    /**
+     * 반려되면 물리 삭제 전에 worker_select_submission_rejection에 반려 이력이 감사 로그로 남는다.
+     */
+    @Test
+    void rejectWorkerSelect_savesRejectionAuditRecord() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        List<WorkerSelectSubmission> before = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdInAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(), weekSchedule.getId(), List.of(worker.getId()),
+                        WorkerSelectSubmissionStatus.ACTIVE
+                );
+        Long submissionId = before.get(0).getId();
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk());
+
+        Integer rejectionCount = jdbcTemplate.queryForObject(
+                "select count(*) from worker_select_submission_rejection "
+                        + "where work_place_id = ? and week_schedule_id = ? and member_id = ? "
+                        + "and submission_id = ? and rejected_by_member_id = ?",
+                Integer.class,
+                workPlace.getId(), weekSchedule.getId(), worker.getId(), submissionId, owner.getId()
+        );
+        assertThat(rejectionCount).isEqualTo(1);
+    }
+
     // ─────────────────────────────────────────────
     // 반려 API - 실패 케이스
     // ─────────────────────────────────────────────
+
+    /**
+     * 제출 마감 기한이 지난 주간 스케줄에는 반려할 수 없다. (재제출 수단이 사라지는 것을 방지)
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenDueDatePassed() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        jdbcTemplate.update(
+                "update week_schedule set due_date = ? where week_schedule_id = ?",
+                LocalDate.now().minusDays(1),
+                weekSchedule.getId()
+        );
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
+     * 이미 자동 생성 실행이 존재하는 주간 스케줄은 반려할 수 없다. (반려로 인한 제출 데이터 변경이 이미 생성된 스케줄에 반영되지 않아 발생하는 데이터 불일치 방지)
+     */
+    @Test
+    void rejectWorkerSelect_failsWhenScheduleAlreadyGenerated() throws Exception {
+        submitUnavailable(worker, List.of(timeDetail.getId()));
+
+        jdbcTemplate.update(
+                "insert into schedule_generation_run "
+                        + "(week_schedule_id, work_place_id, requested_by_member_id, status, total_preview_count, created_at, updated_at) "
+                        + "values (?, ?, ?, 'GENERATED', 0, now(), now())",
+                weekSchedule.getId(), workPlace.getId(), owner.getId()
+        );
+
+        mockMvc.perform(post(
+                        "/api/work-places/{workPlaceId}/week-schedules/{weekScheduleId}/worker-select/{memberId}/reject",
+                        workPlace.getId(), weekSchedule.getId(), worker.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
 
     /**
      * 근무자가 제출한 적 없으면 404를 반환한다.
@@ -947,6 +1050,7 @@ class WorkerSelectApiIntegrationTest {
     private void cleanupDatabase() {
         jdbcTemplate.update("delete from notification_delivery");
         jdbcTemplate.update("delete from notification");
+        jdbcTemplate.update("delete from worker_select_submission_rejection");
         jdbcTemplate.update("delete from work_change_request");
         jdbcTemplate.update("delete from confirmed_schedule_assignment");
         jdbcTemplate.update("delete from confirmed_week_schedule");
