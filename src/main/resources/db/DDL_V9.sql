@@ -819,3 +819,6 @@ CREATE TABLE `worker_select_submission_rejection`
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_worker_select_rejection_place_week_member_created
+    ON worker_select_submission_rejection (work_place_id, week_schedule_id, member_id, created_at);
