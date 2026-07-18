@@ -9,6 +9,16 @@ import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.repository.MemberRepository;
+import com.autoschedule.notification.domain.NotificationType;
+import com.autoschedule.notification.domain.PushPolicy;
+import com.autoschedule.notification.dto.NotificationSendCommand;
+import com.autoschedule.notification.service.NotificationCommandService;
+import com.autoschedule.schedule.domain.ConfirmedWeekScheduleStatus;
+import com.autoschedule.schedule.domain.ScheduleGenerationRunStatus;
+import com.autoschedule.schedule.domain.SchedulePreviewStatus;
+import com.autoschedule.schedule.repository.ConfirmedWeekScheduleRepository;
+import com.autoschedule.schedule.repository.ScheduleGenerationRunRepository;
+import com.autoschedule.schedule.repository.SchedulePreviewRepository;
 import com.autoschedule.schedulecondition.domain.TimeDetail;
 import com.autoschedule.schedulecondition.domain.TimeDetailStatus;
 import com.autoschedule.schedulecondition.domain.WeekSchedule;
@@ -16,13 +26,16 @@ import com.autoschedule.schedulecondition.domain.WeekScheduleStatus;
 import com.autoschedule.schedulecondition.repository.TimeDetailRepository;
 import com.autoschedule.schedulecondition.repository.WeekScheduleRepository;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmission;
+import com.autoschedule.workerselect.domain.WorkerSelectSubmissionRejection;
 import com.autoschedule.workerselect.domain.WorkerSelectSubmissionStatus;
 import com.autoschedule.workerselect.domain.WorkerUnavailableTimeDetail;
 import com.autoschedule.workerselect.dto.WorkerSelectMemberStatusResponse;
+import com.autoschedule.workerselect.dto.WorkerSelectRejectionResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectRequest;
 import com.autoschedule.workerselect.dto.WorkerSelectResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectStatusResponse;
 import com.autoschedule.workerselect.dto.WorkerSelectTimeDetailResponse;
+import com.autoschedule.workerselect.repository.WorkerSelectSubmissionRejectionRepository;
 import com.autoschedule.workerselect.repository.WorkerSelectSubmissionRepository;
 import com.autoschedule.workerselect.repository.WorkerUnavailableTimeDetailRepository;
 import com.autoschedule.workplace.domain.WorkPlace;
@@ -35,6 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -47,6 +61,11 @@ public class WorkerSelectService {
     private final WeekScheduleRepository weekScheduleRepository;
     private final WorkerSelectSubmissionRepository workerSelectSubmissionRepository;
     private final WorkerUnavailableTimeDetailRepository workerUnavailableTimeDetailRepository;
+    private final WorkerSelectSubmissionRejectionRepository workerSelectSubmissionRejectionRepository;
+    private final ScheduleGenerationRunRepository scheduleGenerationRunRepository;
+    private final SchedulePreviewRepository schedulePreviewRepository;
+    private final ConfirmedWeekScheduleRepository confirmedWeekScheduleRepository;
+    private final NotificationCommandService notificationCommandService;
 
     /**
      * 근무자가 선택한 근무 불가 시간대를 저장한다.
@@ -165,6 +184,118 @@ public class WorkerSelectService {
     }
 
     /**
+     * 사장이 근무자의 근무 불가 제출 건을 반려한다.
+     * 반려되면 제출 건과 연관된 근무 불가 time_detail이 모두 물리 삭제되어 근무자가 재제출할 수 있게 된다.
+     */
+    @Transactional
+    public WorkerSelectRejectionResponse rejectWorkerSelect(
+            Long ownerMemberId,
+            Long workPlaceId,
+            Long weekScheduleId,
+            Long memberId
+    ) {
+        // 1. 사장과 사업장, 주간 스케줄 검증
+        Member owner = findActiveMember(ownerMemberId);
+        WorkPlace workPlace = findOwnedActiveWorkPlace(workPlaceId, owner.getId());
+        WeekSchedule weekSchedule = findActiveWeekSchedule(weekScheduleId, workPlace.getId());
+
+        // 2. 제출 마감일이 지난 경우 반려를 막는다.
+        //    (마감 후 반려하면 근무자가 재제출할 수단이 없어 근무 불가 정보 없이 스케줄이 생성되는 문제 방지)
+        validateDueDate(weekSchedule);
+
+        // 3. 이미 자동 생성/미리보기/확정이 진행된 주간 스케줄은 반려를 막는다.
+        //    (반려로 제출 데이터가 바뀌어도 이미 생성된 스케줄에는 반영되지 않아 데이터 불일치 발생 방지)
+        validateScheduleNotGenerated(weekSchedule.getId());
+
+        // 4. 반려 대상 회원이 해당 사업장의 승인된 근무자 크루인지 검증
+        validateTargetWorkerCrewMember(workPlace.getId(), memberId);
+
+        // 5. 반려 대상 제출 건 조회
+        WorkerSelectSubmission submission = workerSelectSubmissionRepository
+                .findByWorkPlaceIdAndWeekScheduleIdAndMemberIdAndStatusAndDeletedAtIsNull(
+                        workPlace.getId(),
+                        weekSchedule.getId(),
+                        memberId,
+                        WorkerSelectSubmissionStatus.ACTIVE
+                )
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.RESOURCE_NOT_FOUND,
+                        "해당 근무자의 제출 정보를 찾을 수 없습니다."
+                ));
+
+        // 6. 물리 삭제 전에 반려 이력을 감사 로그 테이블에 남긴다.
+        workerSelectSubmissionRejectionRepository.save(
+                WorkerSelectSubmissionRejection.create(
+                        workPlace.getId(),
+                        weekSchedule.getId(),
+                        memberId,
+                        submission.getId(),
+                        owner.getId()
+                )
+        );
+
+        // 7. 제출 건과 연관된 근무 불가 time_detail을 물리 삭제한 뒤 제출 건 자체도 물리 삭제한다.
+        // 소프트 삭제로 처리하면 (work_place_id, week_schedule_id, member_id) 유니크 제약에 걸려
+        // 재제출 시 DB 유니크 충돌이 발생하므로 물리 삭제로 유니크 제약을 비워준다.
+        workerUnavailableTimeDetailRepository.deleteBySubmissionId(submission.getId());
+        workerSelectSubmissionRepository.delete(submission);
+
+        // 8. 근무자에게 재제출을 유도하는 알림 발송
+        notifyWorkerRejected(workPlace.getId(), weekSchedule.getId(), memberId);
+
+        return WorkerSelectRejectionResponse.of(workPlace.getId(), weekSchedule.getId(), memberId);
+    }
+
+    /**
+     * 이미 자동 생성 실행/미리보기/확정 스케줄이 존재하는 주간 스케줄인지 확인한다.
+     */
+    private void validateScheduleNotGenerated(Long weekScheduleId) {
+        boolean hasGenerationRun = scheduleGenerationRunRepository
+                .existsByWeekSchedule_IdAndStatusAndDeletedAtIsNull(
+                        weekScheduleId,
+                        ScheduleGenerationRunStatus.GENERATED
+                );
+
+        boolean hasPreview = schedulePreviewRepository
+                .existsByWeekSchedule_IdAndStatusAndDeletedAtIsNull(
+                        weekScheduleId,
+                        SchedulePreviewStatus.ACTIVE
+                );
+
+        boolean hasConfirmedSchedule = confirmedWeekScheduleRepository
+                .existsByWeekSchedule_IdAndStatusAndDeletedAtIsNull(
+                        weekScheduleId,
+                        ConfirmedWeekScheduleStatus.ACTIVE
+                );
+
+        if (hasGenerationRun || hasPreview || hasConfirmedSchedule) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "이미 자동 스케줄 생성이 진행된 주간에는 제출을 반려할 수 없습니다."
+            );
+        }
+    }
+
+    /**
+     * 근무 불가 제출이 반려되었음을 근무자에게 알린다.
+     */
+    private void notifyWorkerRejected(Long workPlaceId, Long weekScheduleId, Long memberId) {
+        notificationCommandService.sendToMember(
+                memberId,
+                new NotificationSendCommand(
+                        NotificationType.WORKER_SELECT_REJECTED,
+                        PushPolicy.PUSH,
+                        "근무 불가 제출이 반려되었습니다.",
+                        "사장님이 근무 불가 제출을 반려했습니다. 다시 제출해 주세요.",
+                        Map.of(
+                                "workPlaceId", String.valueOf(workPlaceId),
+                                "weekScheduleId", String.valueOf(weekScheduleId)
+                        )
+                )
+        );
+    }
+
+    /**
      * 이미 근무 불가 정보를 제출했는지 확인한다.
      */
     private void validateAlreadySubmitted(Long memberId, Long workPlaceId, Long weekScheduleId) {
@@ -243,6 +374,23 @@ public class WorkerSelectService {
 
         if (!exists) {
             throw new ApiException(ErrorCode.FORBIDDEN, "이 회원은 해당 사업장의 크루가 아닙니다.");
+        }
+    }
+
+    /**
+     * 반려 대상 회원이 해당 사업장의 승인된 근무자 크루인지 확인한다.
+     */
+    private void validateTargetWorkerCrewMember(Long workPlaceId, Long memberId) {
+        boolean exists = crewRepository.existsByMember_IdAndWorkPlace_IdAndJoinStatusAndCrewRoleAndStatus(
+                memberId,
+                workPlaceId,
+                CrewJoinStatus.APPROVED,
+                CrewRole.WORKER,
+                CrewStatus.ACTIVE
+        );
+
+        if (!exists) {
+            throw new ApiException(ErrorCode.RESOURCE_NOT_FOUND, "해당 사업장의 근무자를 찾을 수 없습니다.");
         }
     }
 

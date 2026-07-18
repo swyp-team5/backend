@@ -70,7 +70,7 @@ docker compose up --build
 MySQL 컨테이너를 최초 실행하면 아래 누적 DDL 파일이 자동 실행됩니다.
 
 ```text
-src/main/resources/db/DDL_V8.sql
+src/main/resources/db/DDL_V9.sql
 ```
 
 그리고 프론트엔드 로컬 연동 테스트에 필요한 기본 약관 데이터도 함께 적재됩니다.
@@ -128,5 +128,5 @@ AWS_S3_PROFILE_IMAGE_MAX_SIZE_BYTES=10485760
 MySQL 최초 실행 시 적용되는 DDL 파일은 아래 누적 최종본입니다.
 
 ```text
-src/main/resources/db/DDL_V8.sql
+src/main/resources/db/DDL_V9.sql
 ```

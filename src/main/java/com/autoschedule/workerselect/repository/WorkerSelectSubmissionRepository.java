@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 근무자의 근무 불가 스케줄 제출 현황을 조회하고 저장한다.
@@ -41,6 +42,16 @@ public interface WorkerSelectSubmissionRepository extends JpaRepository<WorkerSe
     List<WorkerSelectSubmission> findByWorkPlaceIdAndWeekScheduleIdAndStatusAndDeletedAtIsNull(
             Long workPlaceId,
             Long weekScheduleId,
+            WorkerSelectSubmissionStatus status
+    );
+
+    /**
+     * 특정 사업장, 주간 스케줄, 회원의 활성 제출 건을 조회한다. (반려 대상 조회에 사용)
+     */
+    Optional<WorkerSelectSubmission> findByWorkPlaceIdAndWeekScheduleIdAndMemberIdAndStatusAndDeletedAtIsNull(
+            Long workPlaceId,
+            Long weekScheduleId,
+            Long memberId,
             WorkerSelectSubmissionStatus status
     );
 

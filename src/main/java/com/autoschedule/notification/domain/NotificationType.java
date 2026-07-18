@@ -16,5 +16,6 @@ public enum NotificationType {
     SHIFT_SWAP_REQUEST,
     SHIFT_SWAP_APPROVED,
     CREW_JOINED,
-    CLOCK_IN_OUT
+    CLOCK_IN_OUT,
+    WORKER_SELECT_REJECTED
 }
