@@ -26,7 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 class ExhaustivePruningScheduleCandidateGeneratorTest {
 
-    private static final String EXPECTED_ALGORITHM_VERSION = "BIT_DFS_MRV_TOPN_V1";
+    private static final String EXPECTED_ALGORITHM_VERSION = "BIT_DFS_FAIR_TOPN_V2";
     private static final int MAX_CANDIDATE_COUNT = 50;
 
     private final ExhaustivePruningScheduleCandidateGenerator generator =
@@ -142,6 +142,58 @@ class ExhaustivePruningScheduleCandidateGeneratorTest {
             .allSatisfy(candidate -> assertThat(candidate.score()).isPositive());
 
         assertScoresAreSortedDescending(result);
+    }
+
+    /**
+     * 두 근무자의 7일치 후보가 고유하고 균등하며 서로 다른 형태로 선별되는지 측정한다.
+     */
+    @Test
+    void generate_returnsUniqueBalancedAndDiverseCandidatesForTwoWorkerFullWeek() {
+        WeekSchedule weekSchedule = createWeekSchedule(0, 21);
+        List<Day> days = createFullWeekDays(weekSchedule);
+        List<TimeDetail> timeDetails = createTimeDetailsForDays(days, List.of(1, 1, 1));
+        List<Long> workerMemberIds = List.of(1L, 2L);
+
+        long startedAt = System.nanoTime();
+        ScheduleCandidateGenerationResult result = assertTimeoutPreemptively(Duration.ofSeconds(5), () ->
+            generator.generate(new ScheduleCandidateGenerationCommand(
+                weekSchedule,
+                timeDetails,
+                workerMemberIds,
+                Map.of()
+            ))
+        );
+        double elapsedMs = (System.nanoTime() - startedAt) / 1_000_000.0;
+
+        Set<String> uniqueCandidateKeys = result.candidates().stream()
+            .map(this::candidateKey)
+            .collect(Collectors.toSet());
+        List<Integer> assignmentRanges = result.candidates().stream()
+            .map(candidate -> assignmentRange(candidate, workerMemberIds))
+            .toList();
+
+        System.out.printf(
+            "[ScheduleGeneratorPerf] %-20s | elapsedMs=%8.3f | candidates=%3d | unique=%3d "
+                + "| bestRange=%2d | worstRange=%2d | algorithm=%s%n",
+            "2-workers-full-week",
+            elapsedMs,
+            result.candidates().size(),
+            uniqueCandidateKeys.size(),
+            assignmentRanges.stream().min(Integer::compareTo).orElse(0),
+            assignmentRanges.stream().max(Integer::compareTo).orElse(0),
+            result.algorithmVersion()
+        );
+
+        assertThat(result.candidates()).hasSize(MAX_CANDIDATE_COUNT);
+        assertThat(uniqueCandidateKeys).hasSize(result.candidates().size());
+        assertThat(assignmentRanges).allMatch(range -> range <= 1);
+        int maximumDistanceFromFirst = result.candidates().stream()
+            .skip(1)
+            .mapToInt(candidate -> candidateDistance(result.candidates().get(0), candidate))
+            .max()
+            .orElse(0);
+        assertThat(maximumDistanceFromFirst)
+            .isGreaterThanOrEqualTo((int) Math.ceil(timeDetails.size() * 0.8));
     }
 
     /**
@@ -424,6 +476,55 @@ class ExhaustivePruningScheduleCandidateGeneratorTest {
         assertThat(result.candidates())
             .extracting(ScheduleCandidate::score)
             .isSortedAccordingTo(Comparator.reverseOrder());
+    }
+
+    /**
+     * 실제 슬롯 배정만으로 후보 비교용 문자열 키를 생성한다.
+     */
+    private String candidateKey(ScheduleCandidate candidate) {
+        return candidate.days().stream()
+            .flatMap(day -> day.timeDetails().stream())
+            .sorted(Comparator.comparingLong(ScheduleCandidateTimeDetail::timeDetailId))
+            .map(timeDetail -> timeDetail.timeDetailId() + ":" + timeDetail.workerMemberIds().stream()
+                .sorted()
+                .map(String::valueOf)
+                .collect(Collectors.joining(",")))
+            .collect(Collectors.joining("|"));
+    }
+
+    /**
+     * 근무자별 파트 배정 횟수의 최댓값과 최솟값 차이를 계산한다.
+     */
+    private int assignmentRange(ScheduleCandidate candidate, List<Long> workerMemberIds) {
+        Map<Long, Integer> assignmentCountByWorker = new HashMap<>();
+        workerMemberIds.forEach(workerMemberId -> assignmentCountByWorker.put(workerMemberId, 0));
+        candidate.days().stream()
+            .flatMap(day -> day.timeDetails().stream())
+            .flatMap(timeDetail -> timeDetail.workerMemberIds().stream())
+            .forEach(workerMemberId -> assignmentCountByWorker.merge(workerMemberId, 1, Integer::sum));
+
+        int minimum = assignmentCountByWorker.values().stream().min(Integer::compareTo).orElse(0);
+        int maximum = assignmentCountByWorker.values().stream().max(Integer::compareTo).orElse(0);
+        return maximum - minimum;
+    }
+
+    /**
+     * 두 후보에서 근무자 구성이 다른 time_detail 수를 계산한다.
+     */
+    private int candidateDistance(ScheduleCandidate left, ScheduleCandidate right) {
+        Map<Long, List<Long>> leftAssignments = left.days().stream()
+            .flatMap(day -> day.timeDetails().stream())
+            .collect(Collectors.toMap(
+                ScheduleCandidateTimeDetail::timeDetailId,
+                ScheduleCandidateTimeDetail::workerMemberIds
+            ));
+
+        return (int) right.days().stream()
+            .flatMap(day -> day.timeDetails().stream())
+            .filter(timeDetail -> !timeDetail.workerMemberIds().equals(
+                leftAssignments.get(timeDetail.timeDetailId())
+            ))
+            .count();
     }
 
     private void assertCandidateIsValid(

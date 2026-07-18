@@ -21,9 +21,11 @@ import java.util.Set;
  */
 public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCandidateGenerator {
 
-    private static final String ALGORITHM_VERSION = "BIT_DFS_MRV_TOPN_V1";
+    private static final String ALGORITHM_VERSION = "BIT_DFS_FAIR_TOPN_V2";
 
-    private static final int MAX_CANDIDATE_COUNT = 50;
+    private static final int MAX_RESULT_CANDIDATE_COUNT = 50;
+
+    private static final int MAX_CANDIDATE_POOL_COUNT = 300;
 
     /**
      * 요청 1건이 서버 CPU를 과도하게 점유하지 않도록 제한한다.
@@ -34,6 +36,8 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
     private static final int MAX_WORKER_COUNT_FOR_BIT_MASK = Long.SIZE;
 
     private static final long COMBINATION_COUNT_CAP = 1_000_000_000L;
+
+    private final ScheduleCandidateSelector candidateSelector = new ScheduleCandidateSelector();
 
     @Override
     public ScheduleCandidateGenerationResult generate(ScheduleCandidateGenerationCommand command) {
@@ -96,12 +100,15 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
 
         search(0, context);
 
-        List<ScheduleCandidate> sortedCandidates = new ArrayList<>(context.topCandidates);
-        sortedCandidates.sort(Comparator.comparingInt(ScheduleCandidate::score).reversed());
+        List<ScheduleCandidate> selectedCandidates = candidateSelector.select(
+            new ArrayList<>(context.topCandidates),
+            sortedWorkerMemberIds,
+            MAX_RESULT_CANDIDATE_COUNT
+        );
 
-        List<ScheduleCandidate> numberedCandidates = new ArrayList<>(sortedCandidates.size());
-        for (int index = 0; index < sortedCandidates.size(); index++) {
-            numberedCandidates.add(sortedCandidates.get(index).withCandidateNo(index + 1));
+        List<ScheduleCandidate> numberedCandidates = new ArrayList<>(selectedCandidates.size());
+        for (int index = 0; index < selectedCandidates.size(); index++) {
+            numberedCandidates.add(selectedCandidates.get(index).withCandidateNo(index + 1));
         }
 
         if (numberedCandidates.isEmpty()) {
@@ -516,7 +523,7 @@ public class ExhaustivePruningScheduleCandidateGenerator implements ScheduleCand
      * 새 후보가 더 좋으면 최악 후보를 제거하고 교체한다.
      */
     private void addCandidateBounded(ScheduleCandidate candidate, SearchContext context) {
-        if (context.topCandidates.size() < MAX_CANDIDATE_COUNT) {
+        if (context.topCandidates.size() < MAX_CANDIDATE_POOL_COUNT) {
             context.topCandidates.offer(candidate);
             return;
         }
