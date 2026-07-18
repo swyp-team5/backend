@@ -1,4 +1,3 @@
-```gitignore
 # =========================================================
 # AutoSchedule Backend .gitignore
 # Public repository safe configuration
@@ -106,6 +105,8 @@ log/
 # Database / Dump / Backup
 # =========================================================
 *.sql
+!src/main/resources/db/*.sql
+!src/test/resources/db/*.sql
 *.dump
 *.bak
 *.backup
@@ -123,6 +124,16 @@ files/
 storage/
 tmp/
 temp/
+.superpowers/
+
+
+# =========================================================
+# Codex / Agent Harness
+# =========================================================
+.agents/
+.codex/
+AGENTS.md
+docs/codex-harness.md
 
 
 # =========================================================
@@ -144,6 +155,8 @@ docker-compose.prod.yml
 *.iws
 *.iml
 *.ipr
+*.run.xml
+.run/
 
 
 # =========================================================
@@ -209,4 +222,6 @@ test-results/
 *.swo
 *.tmp
 *.temp
-```
+
+# Docs
+docs/

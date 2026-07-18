@@ -1,0 +1,21 @@
+package com.autoschedule.notification.domain;
+
+/**
+ * 회원에게 전달되는 알림의 업무 유형을 정의한다.
+ */
+public enum NotificationType {
+    FCM_TEST,
+    NOTICE,
+    SCHEDULE_CONFIRMED,
+    SCHEDULE_UPDATED,
+    WORK_CHANGE_REQUESTED,
+    WORK_CHANGE_TARGET_ACCEPTED,
+    WORK_CHANGE_TARGET_REJECTED,
+    WORK_CHANGE_OWNER_APPROVED,
+    WORK_CHANGE_OWNER_REJECTED,
+    SHIFT_SWAP_REQUEST,
+    SHIFT_SWAP_APPROVED,
+    CREW_JOINED,
+    CLOCK_IN_OUT,
+    WORKER_SELECT_REJECTED
+}

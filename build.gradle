@@ -17,27 +17,47 @@ repositories {
 	mavenCentral()
 }
 
+configurations.configureEach {
+	exclude group: 'commons-logging', module: 'commons-logging'
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.16'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-	// DB / ORM
-	runtimeOnly 'com.mysql:mysql-connector-j'
-	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	// External API Client
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
-	// 모니터링
+	// DB / ORM
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// Monitoring
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
-	// security
+	// Security
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 
-	// jwt
-	implementation 'io.jsonwebtoken:jjwt-api:0.12.6' 	// 컴파일 시 필요한 API
-	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'   	// 런타임 구현체
-	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'	// JWT claims JSON 직렬화/역직렬화
+	// Google ID Token Verification
+	implementation 'com.google.api-client:google-api-client:2.9.0'
+
+	// Apple ID Token / JWKS Verification
+	implementation 'com.nimbusds:nimbus-jose-jwt:9.37.4'
+
+	// Firebase Cloud Messaging
+	implementation 'com.google.firebase:firebase-admin:9.9.0'
+
+	// AWS S3 Presigned URL
+	implementation platform('software.amazon.awssdk:bom:2.25.70')
+	implementation 'software.amazon.awssdk:s3'
+
+	// JWT - Our service token
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
@@ -46,19 +66,21 @@ dependencies {
 	// Configuration Processor
 	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
-	// 테스트
+	// Test
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
+	testImplementation 'org.testcontainers:jdbc'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:mysql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
-
-
-
-
-
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+	systemProperty 'spring.profiles.active', 'test'
+	testLogging {
+		showStandardStreams = true
+	}
 }
