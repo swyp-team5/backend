@@ -6,6 +6,8 @@ package com.autoschedule.notification.domain;
 public enum NotificationType {
     FCM_TEST,
     NOTICE,
+    SCHEDULE_CONDITION_CREATED,
+    SCHEDULE_CONDITION_RESET,
     SCHEDULE_CONFIRMED,
     SCHEDULE_UPDATED,
     WORK_CHANGE_REQUESTED,
