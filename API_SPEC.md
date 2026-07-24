@@ -27,7 +27,7 @@
 - 사업장 크루 초대 코드 생성
 - 사업장 크루 초대 코드 수락
 - 사업장 크루 초대 코드 이력 조회
-- 사업장 근무자 목록 조회
+- 사업장 크루 목록 조회
 - 사업장 근무자 삭제
 - 공지 이미지 S3 업로드 URL 발급
 - 공지 이미지 S3 직접 업로드
@@ -1329,9 +1329,9 @@ Authorization: Bearer {OWNER_ACCESS_TOKEN}
 | 403 | 4003 | OWNER 권한이 아님 |
 | 404 | 4004 | 조회할 수 있는 사업장을 찾을 수 없음 |
 
-### 7.4 사업장 근무자 목록 조회
+### 7.4 사업장 크루 목록 조회
 
-사장님 또는 근무자가 자신이 접근 가능한 사업장의 근무자 크루 목록을 조회한다.
+사장님 또는 근무자가 자신이 접근 가능한 사업장의 사장과 근무자 크루 목록을 조회한다.
 
 ```http
 GET /api/work-places/{workPlaceId}/crews
@@ -1349,11 +1349,11 @@ Authorization: Bearer {ACCESS_TOKEN}
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| workPlaceId | number | Y | 근무자 목록을 조회할 사업장 ID |
+| workPlaceId | number | Y | 크루 목록을 조회할 사업장 ID |
 
 #### 사장님 성공 응답
 
-사장님은 본인이 소유한 활성 사업장의 근무자 개인정보를 조회할 수 있다.
+사장님은 본인이 소유한 활성 사업장의 사장과 근무자 정보를 조회할 수 있다.
 
 ```http
 200 OK
@@ -1362,6 +1362,17 @@ Authorization: Bearer {ACCESS_TOKEN}
 ```json
 {
   "crews": [
+    {
+      "crewId": 10,
+      "memberId": 1,
+      "name": "김사장",
+      "phoneNumber": "01011112222",
+      "profileImageUrl": null,
+      "crewRole": "OWNER",
+      "joinStatus": "APPROVED",
+      "crewStatus": "ACTIVE",
+      "createdAt": "2026-06-01T10:00:00"
+    },
     {
       "crewId": 20,
       "memberId": 7,
@@ -1380,18 +1391,18 @@ Authorization: Bearer {ACCESS_TOKEN}
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | crews[].crewId | number | 사업장 크루 ID |
-| crews[].memberId | number | 근무자 회원 ID |
-| crews[].name | string | 근무자 이름 |
-| crews[].phoneNumber | string | 근무자 휴대폰 번호 |
-| crews[].profileImageUrl | string/null | 근무자 프로필 이미지 URL. 없으면 `null` |
-| crews[].crewRole | string | 현재 `WORKER` |
+| crews[].memberId | number | 크루 회원 ID |
+| crews[].name | string | 크루 이름 |
+| crews[].phoneNumber | string | 크루 휴대폰 번호 |
+| crews[].profileImageUrl | string/null | 크루 프로필 이미지 URL. 없으면 `null` |
+| crews[].crewRole | string | 사업장 역할. `OWNER`, `WORKER` |
 | crews[].joinStatus | string | 현재 응답에는 `APPROVED`만 포함 |
 | crews[].crewStatus | string | 현재 응답에는 `ACTIVE`만 포함 |
 | crews[].createdAt | string | 크루 등록 시각 |
 
 #### 근무자 성공 응답
 
-근무자는 같은 사업장 근무자의 이름과 프로필 이미지만 조회할 수 있다. 휴대폰 번호, 가입 상태, 크루 상태 등 개인정보성/관리성 필드는 내려주지 않는다.
+근무자는 같은 사업장 사장과 근무자의 역할, 이름, 프로필 이미지만 조회할 수 있다. 휴대폰 번호, 가입 상태, 크루 상태 등 개인정보성/관리성 필드는 내려주지 않는다.
 
 ```http
 200 OK
@@ -1400,6 +1411,13 @@ Authorization: Bearer {ACCESS_TOKEN}
 ```json
 {
   "crews": [
+    {
+      "crewId": 10,
+      "memberId": 1,
+      "crewRole": "OWNER",
+      "name": "김사장",
+      "profileImageUrl": null
+    },
     {
       "crewId": 20,
       "memberId": 7,
@@ -1414,17 +1432,16 @@ Authorization: Bearer {ACCESS_TOKEN}
 | 필드 | 타입          | 설명                          |
 | --- |-------------|-----------------------------|
 | crews[].crewId | number      | 사업장 크루 ID                   |
-| crews[].memberId | number      | 근무자 회원 ID                   |
-| crews[].crewRole | string      | crew 권한                     |
-| crews[].name | string      | 근무자 이름                      |
-| crews[].profileImageUrl | string/null | 근무자 프로필 이미지 URL. 없으면 `null` |
+| crews[].memberId | number      | 크루 회원 ID                   |
+| crews[].crewRole | string      | 사업장 역할. `OWNER`, `WORKER` |
+| crews[].name | string      | 크루 이름                      |
+| crews[].profileImageUrl | string/null | 크루 프로필 이미지 URL. 없으면 `null` |
 
 #### 주요 비즈니스 규칙
 
-- 목록에는 `APPROVED / WORKER / ACTIVE` 상태이고 `deleted_at is null`인 크루만 포함한다.
-- 사장님은 본인이 소유한 활성 사업장의 근무자 목록만 조회할 수 있다.
-- 근무자는 본인이 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장의 근무자 목록만 조회할 수 있다.
-- OWNER 크루도 포함하여 해당 사업장의 모든 인원을 조회한다.
+- 목록에는 `APPROVED / ACTIVE` 상태이고 `deleted_at is null`인 `OWNER`, `WORKER` 크루를 포함한다.
+- 사장님은 본인이 소유한 활성 사업장의 크루 목록만 조회할 수 있다.
+- 근무자는 본인이 `APPROVED / ACTIVE` 상태로 소속된 활성 사업장의 크루 목록만 조회할 수 있다.
 - 백엔드는 `crew`와 `member`를 fetch join으로 조회하고, 활성 프로필 이미지는 `memberId IN (...)`으로 한 번에 조회해 N+1 쿼리를 방지한다.
 
 #### 주요 에러
@@ -3823,7 +3840,7 @@ Content-Type: application/json
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| maxPersonalWorkCount | Integer | Y | 인원당 최대 근무수 |
+| maxPersonalWorkCount | Integer | Y | 인원당 최대 근무수. `1` 이상이며 별도의 상한은 없음 |
 
 #### dueDate
 
@@ -3845,9 +3862,13 @@ Content-Type: application/json
 | date | String | Y | 해당 요일의 일자 |
 | groupingId | Integer | N | UI에서 함께 선택된 요일 그룹 ID, 요일 선택이 안됐을시엔 null로 저장 |
 | workChangeCount | Integer | Y | 근무 교대 횟수, 기본값은 0 |
-| holidayStatus | Boolean | Y | 휴무일 여부 |
-| selectLimitStatus | Boolean | Y | 근무자 선택 제한 여부 |
-| timeDetails | Array | Y | 해당 요일의 근무 타임 상세 목록 |
+| holidayStatus | Boolean | Y | 사업장이 영업하지 않는 휴일 여부 |
+| selectLimitStatus | Boolean | Y | 영업일 중 근무자의 근무 불가 제출을 제한하고 자동 스케줄에서 무작위 배정할지 여부 |
+| timeDetails | Array | 조건부 | 영업일에는 필수이며 휴일에는 생략하거나 빈 배열로 전달하는 근무 타임 상세 목록 |
+
+- `holidayStatus=true`와 `selectLimitStatus=true`는 동시에 지정할 수 없다.
+- `selectLimitStatus=true`인 날은 영업일이므로 `timeDetails`가 반드시 1개 이상 필요하다.
+- `holidayStatus=true`인 날에는 `timeDetails`를 입력할 수 없다.
 
 ---
 
