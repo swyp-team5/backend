@@ -60,4 +60,9 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
      * 소셜 제공자와 소셜 subject로 이미 가입된 회원이 있는지 확인한다.
      */
     boolean existsBySocialProviderAndSocialSubject(SocialProvider socialProvider, String socialSubject);
+
+    /**
+     * 테스트 계정 로그인 ID로 회원을 조회한다.
+     */
+    Optional<Member> findByLoginId(String loginId);
 }

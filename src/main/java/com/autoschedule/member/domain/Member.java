@@ -39,6 +39,12 @@ public class Member extends BaseEntity {
     @Column(name = "social_email", length = 255)
     private String socialEmail;
 
+    @Column(name = "login_id", length = 50)
+    private String loginId;
+
+    @Column(length = 255)
+    private String password;
+
     @Column(nullable = false, length = 10)
     private String name;
 

@@ -6,5 +6,6 @@ package com.autoschedule.member.domain;
 public enum SocialProvider {
     GOOGLE,
     KAKAO,
-    APPLE
+    APPLE,
+    TEST
 }
