@@ -1,6 +1,8 @@
 package com.autoschedule.member.service;
 
 import com.autoschedule.auth.refresh.RefreshTokenStore;
+import com.autoschedule.crew.domain.CrewStatus;
+import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
@@ -22,42 +24,37 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @RequiredArgsConstructor
 public class MemberWithdrawalService {
 
-    private static final Duration WITHDRAWAL_GRACE_PERIOD = Duration.ofDays(30);
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // private static final Duration WITHDRAWAL_GRACE_PERIOD = Duration.ofDays(30);
 
     private final MemberRepository memberRepository;
+    private final CrewRepository crewRepository;
     private final RefreshTokenStore refreshTokenStore;
     private final FcmTokenService fcmTokenService;
 
     /**
-     * 회원을 탈퇴 유예 상태로 전환하고 모든 refresh token과 FCM token을 정리한다.
+     * 회원을 즉시 탈퇴 완료 상태로 전환하고, 소속된 모든 크루를 비활성화하며
+     * 모든 refresh token과 FCM token을 정리한다. 유예 기간 없이 즉시 처리되며,
+     * 이후 재이용하려면 신규 회원가입이 필요하다.
      */
     @Transactional
     public void requestWithdrawal(Long memberId) {
         Member member = findMember(memberId);
-        validateNotWithdrawn(member);
+        validateNotAlreadyWithdrawn(member);
 
-        member.requestWithdrawal(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        member.withdraw(now);
+        deactivateCrews(member.getId(), now);
         fcmTokenService.deactivateAll(member.getId());
         deleteRefreshTokensAfterCommit(member.getId());
     }
 
     /**
-     * 30일 유예 기간 안의 탈퇴 신청을 취소하고 회원을 정상 상태로 복구한다.
+     * 탈퇴한 회원이 소속되어 있던 활성 크루를 모두 비활성화한다.
      */
-    @Transactional
-    public void cancelWithdrawal(Long memberId) {
-        Member member = findMember(memberId);
-        validateNotWithdrawn(member);
-
-        if (member.getStatus() == MemberStatus.ACTIVE) {
-            return;
-        }
-
-        if (!member.isWithinWithdrawalGracePeriod(LocalDateTime.now(), WITHDRAWAL_GRACE_PERIOD)) {
-            throw new ApiException(ErrorCode.CONFLICT, "탈퇴 취소 가능 기간이 지났습니다.");
-        }
-
-        member.cancelWithdrawal();
+    private void deactivateCrews(Long memberId, LocalDateTime deletedAt) {
+        crewRepository.findByMember_IdAndStatusAndDeletedAtIsNull(memberId, CrewStatus.ACTIVE)
+                .forEach(crew -> crew.deactivate(deletedAt));
     }
 
     /**
@@ -69,13 +66,42 @@ public class MemberWithdrawalService {
     }
 
     /**
-     * 영구 탈퇴 처리된 회원은 셀프 탈퇴 신청/취소 대상에서 제외한다.
+     * 이미 탈퇴 완료된 회원의 중복 탈퇴 요청을 막는다.
      */
-    private void validateNotWithdrawn(Member member) {
-        if (member.getStatus() == MemberStatus.WITHDRAWN) {
+    private void validateNotAlreadyWithdrawn(Member member) {
+        if (member.getStatus() == MemberStatus.DELETE) {
             throw new ApiException(ErrorCode.CONFLICT, "이미 탈퇴 완료된 회원입니다.");
         }
     }
+
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 30일 유예 기간 안의 탈퇴 신청을 취소하고 회원을 정상 상태로 복구한다.
+    //  */
+    // @Transactional
+    // public void cancelWithdrawal(Long memberId) {
+    //     Member member = findMember(memberId);
+    //     validateNotWithdrawn(member);
+    //
+    //     if (member.getStatus() == MemberStatus.ACTIVE) {
+    //         return;
+    //     }
+    //
+    //     if (!member.isWithinWithdrawalGracePeriod(LocalDateTime.now(), WITHDRAWAL_GRACE_PERIOD)) {
+    //         throw new ApiException(ErrorCode.CONFLICT, "탈퇴 취소 가능 기간이 지났습니다.");
+    //     }
+    //
+    //     member.cancelWithdrawal();
+    // }
+    //
+    // /**
+    //  * 영구 탈퇴 처리된 회원은 셀프 탈퇴 신청/취소 대상에서 제외한다.
+    //  */
+    // private void validateNotWithdrawn(Member member) {
+    //     if (member.getStatus() == MemberStatus.WITHDRAWN) {
+    //         throw new ApiException(ErrorCode.CONFLICT, "이미 탈퇴 완료된 회원입니다.");
+    //     }
+    // }
 
     /**
      * DB 탈퇴 상태 변경이 커밋된 뒤 Redis refresh token 세션을 제거한다.

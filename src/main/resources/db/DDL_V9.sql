@@ -822,3 +822,23 @@ CREATE TABLE `worker_select_submission_rejection`
 
 CREATE INDEX idx_worker_select_rejection_place_week_member_created
     ON worker_select_submission_rejection (work_place_id, week_schedule_id, member_id, created_at);
+
+-- ─────────────────────────────────────────────
+-- 회원탈퇴 유예기간 제거 + 재가입 허용을 위한 스키마 변경
+-- ─────────────────────────────────────────────
+
+-- 기존 (social_provider, social_subject) 유니크 제약 제거
+ALTER TABLE `member`
+    DROP INDEX `uk_member_social_provider_subject`;
+
+-- 활성 회원일 때만 member_id와 같은 값을 갖는 컬럼 추가 (탈퇴 시 NULL로 전환)
+-- MySQL은 생성 컬럼이 같은 테이블의 AUTO_INCREMENT 컬럼(member_id)을 참조하는 것을 허용하지 않아
+-- GENERATED ALWAYS AS 대신 애플리케이션(Member 엔티티)에서 값을 직접 관리한다.
+ALTER TABLE `member`
+    ADD COLUMN `active_member_id` BIGINT NULL AFTER `social_subject`;
+
+-- social_provider + social_subject + active_member_id 조합으로 재구성
+-- (탈퇴한 회원은 active_member_id가 NULL이라 MySQL이 서로 다른 값으로 취급 → 동일 소셜 계정 재가입 가능)
+ALTER TABLE `member`
+    ADD CONSTRAINT `uk_member_social_provider_subject`
+        UNIQUE (`social_provider`, `social_subject`, `active_member_id`);

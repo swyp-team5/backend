@@ -52,12 +52,31 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     }
 
     /**
-     * 소셜 제공자와 소셜 subject로 회원을 조회한다.
+     * 소셜 제공자와 소셜 subject로 활성 회원을 조회한다. (탈퇴한 회원은 재가입 대상으로 취급)
      */
-    Optional<Member> findBySocialProviderAndSocialSubject(SocialProvider socialProvider, String socialSubject);
+    Optional<Member> findBySocialProviderAndSocialSubjectAndStatus(
+            SocialProvider socialProvider,
+            String socialSubject,
+            MemberStatus status
+    );
 
     /**
-     * 소셜 제공자와 소셜 subject로 이미 가입된 회원이 있는지 확인한다.
+     * 소셜 제공자와 소셜 subject로 이미 가입된 활성 회원이 있는지 확인한다.
      */
-    boolean existsBySocialProviderAndSocialSubject(SocialProvider socialProvider, String socialSubject);
+    boolean existsBySocialProviderAndSocialSubjectAndStatus(
+            SocialProvider socialProvider,
+            String socialSubject,
+            MemberStatus status
+    );
+
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 소셜 제공자와 소셜 subject로 회원을 조회한다.
+    //  */
+    // Optional<Member> findBySocialProviderAndSocialSubject(SocialProvider socialProvider, String socialSubject);
+    //
+    // /**
+    //  * 소셜 제공자와 소셜 subject로 이미 가입된 회원이 있는지 확인한다.
+    //  */
+    // boolean existsBySocialProviderAndSocialSubject(SocialProvider socialProvider, String socialSubject);
 }
