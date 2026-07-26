@@ -84,7 +84,8 @@ public class MemberController {
     }
 
     /**
-     * 현재 로그인한 회원의 탈퇴를 요청하고 30일 유예 상태로 전환한다.
+     * 현재 로그인한 회원을 즉시 탈퇴 처리한다. 유예 기간 없이 소프트 삭제되며,
+     * 이후 재이용하려면 신규 회원가입이 필요하다.
      */
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/api/members/me")
@@ -92,12 +93,13 @@ public class MemberController {
         memberWithdrawalService.requestWithdrawal(principal.memberId());
     }
 
-    /**
-     * 현재 로그인한 회원의 탈퇴 요청을 유예 기간 안에서 취소한다.
-     */
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PostMapping("/api/members/me/withdrawal-cancel")
-    public void cancelWithdrawal(@AuthenticationPrincipal JwtAuthenticationPrincipal principal) {
-        memberWithdrawalService.cancelWithdrawal(principal.memberId());
-    }
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 현재 로그인한 회원의 탈퇴 요청을 유예 기간 안에서 취소한다.
+    //  */
+    // @ResponseStatus(HttpStatus.NO_CONTENT)
+    // @PostMapping("/api/members/me/withdrawal-cancel")
+    // public void cancelWithdrawal(@AuthenticationPrincipal JwtAuthenticationPrincipal principal) {
+    //     memberWithdrawalService.cancelWithdrawal(principal.memberId());
+    // }
 }

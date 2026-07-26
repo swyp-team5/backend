@@ -402,14 +402,73 @@ class AuthApiIntegrationTest {
                 .andExpect(jsonPath("$.status").value("LOGIN_SUCCESS"));
     }
 
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 탈퇴 유예 기간 내 회원은 로그인할 수 있지만 로그인만으로 탈퇴가 자동 취소되지는 않는다.
+    //  */
+    // @Test
+    // void socialLoginAllowsWithdrawalPendingMemberWithinGracePeriodWithoutAutoCancel() throws Exception {
+    //     JsonNode signupResponse = signupWorkerAndReadResponse("withdrawal-login-device");
+    //     Long memberId = signupResponse.get("member").get("memberId").asLong();
+    //     markWithdrawalPending(memberId, LocalDateTime.now().minusDays(5));
+    //
+    //     mockMvc.perform(post("/api/auth/social-login")
+    //                     .contentType(MediaType.APPLICATION_JSON)
+    //                     .content("""
+    //                             {
+    //                               "provider": "GOOGLE",
+    //                               "idToken": "google-id-token",
+    //                               "device": {
+    //                                 "deviceId": "withdrawal-login-device-2",
+    //                                 "platform": "ANDROID",
+    //                                 "appVersion": "1.0.0"
+    //                               }
+    //                             }
+    //                             """))
+    //             .andExpect(status().isOk())
+    //             .andExpect(jsonPath("$.status").value("LOGIN_SUCCESS"))
+    //             .andExpect(jsonPath("$.member.status").value("WITHDRAWAL_PENDING"))
+    //             .andExpect(jsonPath("$.accessToken").isNotEmpty());
+    //
+    //     Member member = memberRepository.findById(memberId).orElseThrow();
+    //     assertThat(member.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
+    //     assertThat(member.getDeletedAt()).isNotNull();
+    // }
+    //
+    // /**
+    //  * 탈퇴 신청 후 30일이 지난 회원은 사용자 로그인으로 서비스를 다시 사용할 수 없다.
+    //  */
+    // @Test
+    // void socialLoginRejectsWithdrawalPendingMemberAfterGracePeriod() throws Exception {
+    //     JsonNode signupResponse = signupWorkerAndReadResponse("withdrawal-expired-device");
+    //     Long memberId = signupResponse.get("member").get("memberId").asLong();
+    //     markWithdrawalPending(memberId, LocalDateTime.now().minusDays(31));
+    //
+    //     mockMvc.perform(post("/api/auth/social-login")
+    //                     .contentType(MediaType.APPLICATION_JSON)
+    //                     .content("""
+    //                             {
+    //                               "provider": "GOOGLE",
+    //                               "idToken": "google-id-token",
+    //                               "device": {
+    //                                 "deviceId": "withdrawal-expired-device-2",
+    //                                 "platform": "ANDROID",
+    //                                 "appVersion": "1.0.0"
+    //                               }
+    //                             }
+    //                             """))
+    //             .andExpect(status().isConflict())
+    //             .andExpect(jsonPath("$.code").value("4005"));
+    // }
+
     /**
-     * 탈퇴 유예 기간 내 회원은 로그인할 수 있지만 로그인만으로 탈퇴가 자동 취소되지는 않는다.
+     * 탈퇴 완료된 회원은 소셜 로그인 시 기존 회원으로 취급되지 않고 다시 회원가입이 필요하다.
      */
     @Test
-    void socialLoginAllowsWithdrawalPendingMemberWithinGracePeriodWithoutAutoCancel() throws Exception {
-        JsonNode signupResponse = signupWorkerAndReadResponse("withdrawal-login-device");
+    void socialLoginTreatsWithdrawnMemberAsNewSignup() throws Exception {
+        JsonNode signupResponse = signupWorkerAndReadResponse("withdrawn-login-device");
         Long memberId = signupResponse.get("member").get("memberId").asLong();
-        markWithdrawalPending(memberId, LocalDateTime.now().minusDays(5));
+        markDeleted(memberId, LocalDateTime.now());
 
         mockMvc.perform(post("/api/auth/social-login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -418,46 +477,34 @@ class AuthApiIntegrationTest {
                                   "provider": "GOOGLE",
                                   "idToken": "google-id-token",
                                   "device": {
-                                    "deviceId": "withdrawal-login-device-2",
+                                    "deviceId": "withdrawn-login-device-2",
                                     "platform": "ANDROID",
                                     "appVersion": "1.0.0"
                                   }
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("LOGIN_SUCCESS"))
-                .andExpect(jsonPath("$.member.status").value("WITHDRAWAL_PENDING"))
-                .andExpect(jsonPath("$.accessToken").isNotEmpty());
-
-        Member member = memberRepository.findById(memberId).orElseThrow();
-        assertThat(member.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
-        assertThat(member.getDeletedAt()).isNotNull();
+                .andExpect(jsonPath("$.status").value("SIGNUP_REQUIRED"))
+                .andExpect(jsonPath("$.accessToken").doesNotExist());
     }
 
     /**
-     * 탈퇴 신청 후 30일이 지난 회원은 사용자 로그인으로 서비스를 다시 사용할 수 없다.
+     * 탈퇴 완료된 회원은 같은 소셜 계정으로 다시 회원가입해 새 회원으로 등록할 수 있다.
      */
     @Test
-    void socialLoginRejectsWithdrawalPendingMemberAfterGracePeriod() throws Exception {
-        JsonNode signupResponse = signupWorkerAndReadResponse("withdrawal-expired-device");
-        Long memberId = signupResponse.get("member").get("memberId").asLong();
-        markWithdrawalPending(memberId, LocalDateTime.now().minusDays(31));
+    void workerSignupAllowsReSignupAfterWithdrawal() throws Exception {
+        JsonNode signupResponse = signupWorkerAndReadResponse("withdrawn-resignup-device");
+        Long firstMemberId = signupResponse.get("member").get("memberId").asLong();
+        markDeleted(firstMemberId, LocalDateTime.now());
 
-        mockMvc.perform(post("/api/auth/social-login")
+        mockMvc.perform(post("/api/auth/signup/worker")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "provider": "GOOGLE",
-                                  "idToken": "google-id-token",
-                                  "device": {
-                                    "deviceId": "withdrawal-expired-device-2",
-                                    "platform": "ANDROID",
-                                    "appVersion": "1.0.0"
-                                  }
-                                }
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("4005"));
+                        .content(workerSignupBody("withdrawn-resignup-device-2")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("LOGIN_SUCCESS"))
+                .andExpect(jsonPath("$.member.memberId").value(org.hamcrest.Matchers.not(firstMemberId.intValue())));
+
+        assertThat(memberRepository.count()).isEqualTo(2);
     }
 
     /**
@@ -636,15 +683,27 @@ class AuthApiIntegrationTest {
     }
 
     /**
-     * 테스트 회원을 탈퇴 유예 상태로 직접 준비한다.
+     * 테스트 회원을 탈퇴 완료 상태로 직접 준비한다.
      */
-    private void markWithdrawalPending(Long memberId, LocalDateTime deletedAt) {
+    private void markDeleted(Long memberId, LocalDateTime deletedAt) {
         jdbcTemplate.update(
-                "update member set status = 'WITHDRAWAL_PENDING', deleted_at = ? where member_id = ?",
+                "update member set status = 'DELETE', deleted_at = ? where member_id = ?",
                 deletedAt,
                 memberId
         );
     }
+
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 테스트 회원을 탈퇴 유예 상태로 직접 준비한다.
+    //  */
+    // private void markWithdrawalPending(Long memberId, LocalDateTime deletedAt) {
+    //     jdbcTemplate.update(
+    //             "update member set status = 'WITHDRAWAL_PENDING', deleted_at = ? where member_id = ?",
+    //             deletedAt,
+    //             memberId
+    //     );
+    // }
 
     /**
      * 테스트 간 DB 상태가 섞이지 않도록 관련 테이블을 직접 비운다.

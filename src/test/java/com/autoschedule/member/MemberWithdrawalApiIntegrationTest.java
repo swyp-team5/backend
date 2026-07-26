@@ -12,6 +12,9 @@ import com.autoschedule.auth.domain.DevicePlatform;
 import com.autoschedule.auth.domain.TokenType;
 import com.autoschedule.auth.jwt.JwtTokenProvider;
 import com.autoschedule.auth.refresh.RefreshTokenStore;
+import com.autoschedule.crew.domain.Crew;
+import com.autoschedule.crew.domain.CrewStatus;
+import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.domain.MemberRole;
 import com.autoschedule.member.domain.MemberStatus;
@@ -19,6 +22,9 @@ import com.autoschedule.member.domain.SocialProvider;
 import com.autoschedule.member.repository.MemberRepository;
 import com.autoschedule.notification.domain.FcmToken;
 import com.autoschedule.notification.repository.FcmTokenRepository;
+import com.autoschedule.workplace.domain.WorkPlace;
+import com.autoschedule.workplace.domain.WorkPlaceSize;
+import com.autoschedule.workplace.repository.WorkPlaceRepository;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +52,12 @@ class MemberWithdrawalApiIntegrationTest {
 
     @Autowired
     private FcmTokenRepository fcmTokenRepository;
+
+    @Autowired
+    private CrewRepository crewRepository;
+
+    @Autowired
+    private WorkPlaceRepository workPlaceRepository;
 
     @MockitoBean
     private RefreshTokenStore refreshTokenStore;
@@ -75,7 +87,7 @@ class MemberWithdrawalApiIntegrationTest {
     }
 
     /**
-     * 활성 회원은 탈퇴 신청 시 유예 상태가 되고 refresh token과 FCM token이 모두 정리된다.
+     * 활성 회원은 탈퇴 신청 시 즉시 탈퇴 완료 상태가 되고 refresh token과 FCM token이 모두 정리된다.
      */
     @Test
     void activeMemberRequestsWithdrawalAndCleansRefreshAndFcmTokens() throws Exception {
@@ -87,7 +99,7 @@ class MemberWithdrawalApiIntegrationTest {
                 .andExpect(status().isNoContent());
 
         Member withdrawnMember = memberRepository.findById(worker.getId()).orElseThrow();
-        assertThat(withdrawnMember.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
+        assertThat(withdrawnMember.getStatus()).isEqualTo(MemberStatus.DELETE);
         assertThat(withdrawnMember.getDeletedAt()).isNotNull();
         verify(refreshTokenStore).deleteAll(worker.getId());
         assertFcmTokenInactive(firstToken.getId());
@@ -104,85 +116,40 @@ class MemberWithdrawalApiIntegrationTest {
                 .andExpect(status().isNoContent());
 
         Member withdrawnMember = memberRepository.findById(worker.getId()).orElseThrow();
-        assertThat(withdrawnMember.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
+        assertThat(withdrawnMember.getStatus()).isEqualTo(MemberStatus.DELETE);
         assertThat(withdrawnMember.getDeletedAt()).isNotNull();
         verify(refreshTokenStore).deleteAll(worker.getId());
     }
 
     /**
-     * 이미 탈퇴 유예 상태인 회원이 다시 탈퇴 신청해도 최초 탈퇴 신청 시각은 유지된다.
+     * 회원탈퇴 시 소속되어 있던 활성 크루도 함께 비활성화된다.
      */
     @Test
-    void withdrawalRequestIsIdempotentAndPreservesFirstDeletedAt() throws Exception {
-        LocalDateTime firstRequestedAt = LocalDateTime.now().minusDays(3).withNano(0);
-        markWithdrawalPending(worker.getId(), firstRequestedAt);
+    void withdrawalDeactivatesActiveCrews() throws Exception {
+        WorkPlace workPlace = workPlaceRepository.save(WorkPlace.create(
+                999L,
+                WorkPlaceSize.ONE_TO_FOUR,
+                "테스트 가게",
+                "서울시 강남구 테헤란로 1",
+                null
+        ));
+        Crew crew = crewRepository.save(Crew.createWorker(worker, workPlace));
 
         mockMvc.perform(delete("/api/members/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
                 .andExpect(status().isNoContent());
 
-        Timestamp deletedAt = jdbcTemplate.queryForObject(
-                "select deleted_at from member where member_id = ?",
-                Timestamp.class,
-                worker.getId()
-        );
-        assertThat(deletedAt.toLocalDateTime()).isEqualTo(firstRequestedAt);
+        Crew deactivatedCrew = crewRepository.findById(crew.getId()).orElseThrow();
+        assertThat(deactivatedCrew.getStatus()).isEqualTo(CrewStatus.INACTIVE);
+        assertThat(deactivatedCrew.getDeletedAt()).isNotNull();
     }
 
     /**
-     * 탈퇴 유예 30일 이내 회원은 탈퇴 취소 API로 즉시 정상 상태로 복구된다.
-     */
-    @Test
-    void withdrawalPendingMemberCancelsWithinGracePeriod() throws Exception {
-        markWithdrawalPending(worker.getId(), LocalDateTime.now().minusDays(29));
-
-        mockMvc.perform(post("/api/members/me/withdrawal-cancel")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
-                .andExpect(status().isNoContent());
-
-        Member restoredMember = memberRepository.findById(worker.getId()).orElseThrow();
-        assertThat(restoredMember.getStatus()).isEqualTo(MemberStatus.ACTIVE);
-        assertThat(restoredMember.getDeletedAt()).isNull();
-    }
-
-    /**
-     * 활성 회원이 탈퇴 취소 API를 호출하면 멱등하게 성공하고 상태를 변경하지 않는다.
-     */
-    @Test
-    void activeMemberCancelWithdrawalIsIdempotent() throws Exception {
-        mockMvc.perform(post("/api/members/me/withdrawal-cancel")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
-                .andExpect(status().isNoContent());
-
-        Member activeMember = memberRepository.findById(worker.getId()).orElseThrow();
-        assertThat(activeMember.getStatus()).isEqualTo(MemberStatus.ACTIVE);
-        assertThat(activeMember.getDeletedAt()).isNull();
-    }
-
-    /**
-     * 탈퇴 신청 후 30일이 지난 회원은 사용자 직접 취소로 복구할 수 없다.
-     */
-    @Test
-    void withdrawalPendingMemberCannotCancelAfterGracePeriod() throws Exception {
-        LocalDateTime expiredRequestedAt = LocalDateTime.now().minusDays(31);
-        markWithdrawalPending(worker.getId(), expiredRequestedAt);
-
-        mockMvc.perform(post("/api/members/me/withdrawal-cancel")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("4005"));
-
-        Member pendingMember = memberRepository.findById(worker.getId()).orElseThrow();
-        assertThat(pendingMember.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
-        assertThat(pendingMember.getDeletedAt()).isNotNull();
-    }
-
-    /**
-     * 영구 탈퇴 상태의 회원은 탈퇴 신청을 다시 수행할 수 없다.
+     * 이미 탈퇴 완료된 회원은 탈퇴 신청을 다시 수행할 수 없다.
      */
     @Test
     void withdrawnMemberCannotRequestWithdrawalAgain() throws Exception {
-        markWithdrawn(worker.getId(), LocalDateTime.now().minusDays(31));
+        markDeleted(worker.getId(), LocalDateTime.now());
 
         mockMvc.perform(delete("/api/members/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
@@ -193,16 +160,14 @@ class MemberWithdrawalApiIntegrationTest {
     }
 
     /**
-     * 영구 탈퇴 상태의 회원은 사용자 직접 탈퇴 취소로 복구할 수 없다.
+     * 탈퇴 취소 API는 더 이상 제공되지 않는다 (유예 기간 정책 제거로 엔드포인트 자체가 삭제됨).
+     * 매핑되지 않은 경로라 NoResourceFoundException이 GlobalExceptionHandler를 거쳐 500으로 응답된다.
      */
     @Test
-    void withdrawnMemberCannotCancelWithdrawal() throws Exception {
-        markWithdrawn(worker.getId(), LocalDateTime.now().minusDays(31));
-
+    void withdrawalCancelEndpointNoLongerExists() throws Exception {
         mockMvc.perform(post("/api/members/me/withdrawal-cancel")
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("4005"));
+                .andExpect(status().isInternalServerError());
     }
 
     /**
@@ -217,15 +182,97 @@ class MemberWithdrawalApiIntegrationTest {
         verifyNoInteractions(refreshTokenStore);
     }
 
-    /**
-     * 인증 토큰이 없으면 회원탈퇴 취소 API에 접근할 수 없다.
-     */
-    @Test
-    void unauthenticatedMemberCannotCancelWithdrawal() throws Exception {
-        mockMvc.perform(post("/api/members/me/withdrawal-cancel"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("4002"));
-    }
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 이미 탈퇴 유예 상태인 회원이 다시 탈퇴 신청해도 최초 탈퇴 신청 시각은 유지된다.
+    //  */
+    // @Test
+    // void withdrawalRequestIsIdempotentAndPreservesFirstDeletedAt() throws Exception {
+    //     LocalDateTime firstRequestedAt = LocalDateTime.now().minusDays(3).withNano(0);
+    //     markWithdrawalPending(worker.getId(), firstRequestedAt);
+    //
+    //     mockMvc.perform(delete("/api/members/me")
+    //                     .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+    //             .andExpect(status().isNoContent());
+    //
+    //     Timestamp deletedAt = jdbcTemplate.queryForObject(
+    //             "select deleted_at from member where member_id = ?",
+    //             Timestamp.class,
+    //             worker.getId()
+    //     );
+    //     assertThat(deletedAt.toLocalDateTime()).isEqualTo(firstRequestedAt);
+    // }
+    //
+    // /**
+    //  * 탈퇴 유예 30일 이내 회원은 탈퇴 취소 API로 즉시 정상 상태로 복구된다.
+    //  */
+    // @Test
+    // void withdrawalPendingMemberCancelsWithinGracePeriod() throws Exception {
+    //     markWithdrawalPending(worker.getId(), LocalDateTime.now().minusDays(29));
+    //
+    //     mockMvc.perform(post("/api/members/me/withdrawal-cancel")
+    //                     .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+    //             .andExpect(status().isNoContent());
+    //
+    //     Member restoredMember = memberRepository.findById(worker.getId()).orElseThrow();
+    //     assertThat(restoredMember.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    //     assertThat(restoredMember.getDeletedAt()).isNull();
+    // }
+    //
+    // /**
+    //  * 활성 회원이 탈퇴 취소 API를 호출하면 멱등하게 성공하고 상태를 변경하지 않는다.
+    //  */
+    // @Test
+    // void activeMemberCancelWithdrawalIsIdempotent() throws Exception {
+    //     mockMvc.perform(post("/api/members/me/withdrawal-cancel")
+    //                     .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+    //             .andExpect(status().isNoContent());
+    //
+    //     Member activeMember = memberRepository.findById(worker.getId()).orElseThrow();
+    //     assertThat(activeMember.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+    //     assertThat(activeMember.getDeletedAt()).isNull();
+    // }
+    //
+    // /**
+    //  * 탈퇴 신청 후 30일이 지난 회원은 사용자 직접 취소로 복구할 수 없다.
+    //  */
+    // @Test
+    // void withdrawalPendingMemberCannotCancelAfterGracePeriod() throws Exception {
+    //     LocalDateTime expiredRequestedAt = LocalDateTime.now().minusDays(31);
+    //     markWithdrawalPending(worker.getId(), expiredRequestedAt);
+    //
+    //     mockMvc.perform(post("/api/members/me/withdrawal-cancel")
+    //                     .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+    //             .andExpect(status().isConflict())
+    //             .andExpect(jsonPath("$.code").value("4005"));
+    //
+    //     Member pendingMember = memberRepository.findById(worker.getId()).orElseThrow();
+    //     assertThat(pendingMember.getStatus()).isEqualTo(MemberStatus.WITHDRAWAL_PENDING);
+    //     assertThat(pendingMember.getDeletedAt()).isNotNull();
+    // }
+    //
+    // /**
+    //  * 영구 탈퇴 상태의 회원은 사용자 직접 탈퇴 취소로 복구할 수 없다.
+    //  */
+    // @Test
+    // void withdrawnMemberCannotCancelWithdrawal() throws Exception {
+    //     markWithdrawn(worker.getId(), LocalDateTime.now().minusDays(31));
+    //
+    //     mockMvc.perform(post("/api/members/me/withdrawal-cancel")
+    //                     .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
+    //             .andExpect(status().isConflict())
+    //             .andExpect(jsonPath("$.code").value("4005"));
+    // }
+    //
+    // /**
+    //  * 인증 토큰이 없으면 회원탈퇴 취소 API에 접근할 수 없다.
+    //  */
+    // @Test
+    // void unauthenticatedMemberCannotCancelWithdrawal() throws Exception {
+    //     mockMvc.perform(post("/api/members/me/withdrawal-cancel"))
+    //             .andExpect(status().isUnauthorized())
+    //             .andExpect(jsonPath("$.code").value("4002"));
+    // }
 
     /**
      * 테스트 회원의 access token 값을 생성한다.
@@ -266,26 +313,38 @@ class MemberWithdrawalApiIntegrationTest {
     }
 
     /**
-     * 회원을 탈퇴 유예 상태로 직접 준비한다.
+     * 회원을 탈퇴 완료 상태로 직접 준비한다.
      */
-    private void markWithdrawalPending(Long memberId, LocalDateTime deletedAt) {
+    private void markDeleted(Long memberId, LocalDateTime deletedAt) {
         jdbcTemplate.update(
-                "update member set status = 'WITHDRAWAL_PENDING', deleted_at = ? where member_id = ?",
+                "update member set status = 'DELETE', deleted_at = ? where member_id = ?",
                 deletedAt,
                 memberId
         );
     }
 
-    /**
-     * 회원을 영구 탈퇴 상태로 직접 준비한다.
-     */
-    private void markWithdrawn(Long memberId, LocalDateTime deletedAt) {
-        jdbcTemplate.update(
-                "update member set status = 'WITHDRAWN', deleted_at = ? where member_id = ?",
-                deletedAt,
-                memberId
-        );
-    }
+    // 유예기간 정책 롤백 대비 보존 — 더 이상 사용하지 않음
+    // /**
+    //  * 회원을 탈퇴 유예 상태로 직접 준비한다.
+    //  */
+    // private void markWithdrawalPending(Long memberId, LocalDateTime deletedAt) {
+    //     jdbcTemplate.update(
+    //             "update member set status = 'WITHDRAWAL_PENDING', deleted_at = ? where member_id = ?",
+    //             deletedAt,
+    //             memberId
+    //     );
+    // }
+    //
+    // /**
+    //  * 회원을 영구 탈퇴 상태로 직접 준비한다.
+    //  */
+    // private void markWithdrawn(Long memberId, LocalDateTime deletedAt) {
+    //     jdbcTemplate.update(
+    //             "update member set status = 'WITHDRAWN', deleted_at = ? where member_id = ?",
+    //             deletedAt,
+    //             memberId
+    //     );
+    // }
 
     /**
      * 테스트 DB 데이터를 참조 순서에 맞춰 제거한다.

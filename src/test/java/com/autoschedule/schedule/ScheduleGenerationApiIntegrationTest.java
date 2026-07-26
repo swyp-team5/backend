@@ -528,12 +528,12 @@ class ScheduleGenerationApiIntegrationTest {
     }
 
     /**
-     * 탈퇴 유예 상태 회원은 자동 스케줄 생성 대상 근무자에서 제외한다.
+     * 탈퇴한 회원은 자동 스케줄 생성 대상 근무자에서 제외한다.
      */
     @Test
-    void generateSchedulePreview_excludesWithdrawalPendingMemberFromRequiredSubmitters() throws Exception {
+    void generateSchedulePreview_excludesWithdrawnMemberFromRequiredSubmitters() throws Exception {
         Member workerC = createApprovedWorker("schedule-worker-c-withdrawal", "worker-c-withdrawal@test.com", "01055556666");
-        workerB.requestWithdrawal(LocalDateTime.now());
+        workerB.withdraw(LocalDateTime.now());
         memberRepository.saveAndFlush(workerB);
         submitWorkerUnavailable(workerA, List.of(evening));
         submitWorkerUnavailable(workerC, List.of(morning));
