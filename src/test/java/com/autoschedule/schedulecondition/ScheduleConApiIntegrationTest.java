@@ -187,6 +187,23 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
+     * 매장 휴일은 영업일에 적용하는 근무 제출 제한일로 동시에 지정할 수 없다.
+     */
+    @Test
+    void createScheduleCondition_failsWhenDayIsBothHolidayAndSelectLimitDay() throws Exception {
+        String request = buildValidRequest()
+                .replaceFirst("\"holidayStatus\": false", "\"holidayStatus\": true")
+                .replaceFirst("\"selectLimitStatus\": false", "\"selectLimitStatus\": true");
+
+        mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("4000"));
+    }
+
+    /**
      * 그룹이 있는 영업일은 timeDetails 필드가 없으면 400으로 거절한다.
      */
     @Test
@@ -634,10 +651,10 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
-     * maxPersonalWorkCount가 7을 초과하면 스케줄 조건 생성 요청이 실패한다.
+     * maxPersonalWorkCount가 1보다 작으면 스케줄 조건 생성 요청이 실패한다.
      */
     @Test
-    void createScheduleCondition_failsWhenMaxPersonalWorkCountExceedsSeven() throws Exception {
+    void createScheduleCondition_failsWhenMaxPersonalWorkCountIsZero() throws Exception {
         mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -646,7 +663,7 @@ class ScheduleConApiIntegrationTest {
                                   "workPlaceOpenTime": "09:00:00",
                                   "workPlaceCloseTime": "22:00:00",
                                   "minPersonalWorkCount": 1,
-                                  "maxPersonalWorkCount": 8,
+                                  "maxPersonalWorkCount": 0,
                                   "days": [%s]
                                 }
                                 """.formatted(buildSundayDayJson())))
@@ -1178,7 +1195,7 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
-     * maxPersonalWorkCount = 7은 허용된 최댓값으로 성공한다.
+     * maxPersonalWorkCount = 7은 허용되는 값으로 성공한다.
      */
     @Test
     void createScheduleCondition_succeedsWhenMaxPersonalWorkCountIsSeven() throws Exception {
@@ -1190,16 +1207,15 @@ class ScheduleConApiIntegrationTest {
     }
 
     /**
-     * maxPersonalWorkCount = 8은 허용 범위를 초과하여 실패한다.
+     * maxPersonalWorkCount에는 7회의 상한이 없으므로 8도 허용한다.
      */
     @Test
-    void createScheduleCondition_failsWhenMaxPersonalWorkCountIsEight() throws Exception {
+    void createScheduleCondition_succeedsWhenMaxPersonalWorkCountIsEight() throws Exception {
         mockMvc.perform(post("/api/work-places/{workPlaceId}/schedule-conditions", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(buildRequestWithMinMax(1, 8)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("4000"));
+                .andExpect(status().isCreated());
     }
 
     /**
@@ -1403,7 +1419,7 @@ class ScheduleConApiIntegrationTest {
                       "groupingId": null,
                       "workChangeCount": 0,
                       "holidayStatus": true,
-                      "selectLimitStatus": true
+                      "selectLimitStatus": false
                     }
                   ]
                 }

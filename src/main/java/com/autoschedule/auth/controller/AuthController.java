@@ -4,6 +4,7 @@ import com.autoschedule.auth.dto.AuthResponse;
 import com.autoschedule.auth.dto.OwnerSignupRequest;
 import com.autoschedule.auth.dto.RefreshTokenRequest;
 import com.autoschedule.auth.dto.SocialLoginRequest;
+import com.autoschedule.auth.dto.TestLoginRequest;
 import com.autoschedule.auth.dto.WorkerSignupRequest;
 import com.autoschedule.auth.service.AuthService;
 import jakarta.validation.Valid;
@@ -31,6 +32,14 @@ public class AuthController {
     @PostMapping("/social-login")
     public AuthResponse socialLogin(@Valid @RequestBody SocialLoginRequest request) {
         return authService.socialLogin(request);
+    }
+
+    /**
+     * App Store 심사용 ID/PW 테스트 계정으로 로그인하고 refresh token을 포함한 로그인 토큰을 발급한다.
+     */
+    @PostMapping("/test-login")
+    public AuthResponse testLogin(@Valid @RequestBody TestLoginRequest request) {
+        return authService.testLogin(request);
     }
 
     /**

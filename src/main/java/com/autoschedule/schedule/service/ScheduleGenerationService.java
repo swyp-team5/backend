@@ -8,6 +8,10 @@ import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.repository.MemberRepository;
+import com.autoschedule.notification.domain.NotificationType;
+import com.autoschedule.notification.domain.PushPolicy;
+import com.autoschedule.notification.dto.NotificationSendCommand;
+import com.autoschedule.notification.service.NotificationCommandService;
 import com.autoschedule.schedule.domain.ConfirmedScheduleAssignment;
 import com.autoschedule.schedule.domain.ConfirmedScheduleAssignmentStatus;
 import com.autoschedule.schedule.domain.ConfirmedWeekSchedule;
@@ -90,6 +94,7 @@ public class ScheduleGenerationService {
     private final ConfirmedWeekScheduleRepository confirmedWeekScheduleRepository;
     private final ConfirmedScheduleAssignmentRepository confirmedScheduleAssignmentRepository;
     private final ScheduleCandidateGenerator scheduleCandidateGenerator;
+    private final NotificationCommandService notificationCommandService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -285,7 +290,79 @@ public class ScheduleGenerationService {
         confirmedScheduleAssignmentRepository.saveAll(assignments);
         preview.markConfirmed();
 
+        sendScheduleConfirmedNotification(workPlace, weekSchedule, confirmed);
+
         return ConfirmedWeekScheduleResponse.of(confirmed, assignments.size());
+    }
+
+    /**
+     * 스케줄 확정 사실을 사업장의 전체 승인 근무자에게 알린다.
+     */
+    private void sendScheduleConfirmedNotification(
+            WorkPlace workPlace,
+            WeekSchedule weekSchedule,
+            ConfirmedWeekSchedule confirmed
+    ) {
+        notifyAllApprovedWorkers(
+                workPlace,
+                weekSchedule,
+                NotificationType.SCHEDULE_CONFIRMED,
+                "확정 스케줄이 나왔어요",
+                weekSchedule.getWeekScheduleName() + " 근무 스케줄이 확정됐습니다. 확인해주세요.",
+                Map.of(
+                        "workPlaceId", String.valueOf(workPlace.getId()),
+                        "weekScheduleId", String.valueOf(weekSchedule.getId()),
+                        "confirmedWeekScheduleId", String.valueOf(confirmed.getId())
+                )
+        );
+    }
+
+    /**
+     * 확정 스케줄 수정/추가 사실을 사업장의 전체 승인 근무자에게 알린다.
+     */
+    private void sendScheduleUpdatedNotification(WorkPlace workPlace, ConfirmedWeekSchedule confirmed) {
+        WeekSchedule weekSchedule = confirmed.getWeekSchedule();
+        notifyAllApprovedWorkers(
+                workPlace,
+                weekSchedule,
+                NotificationType.SCHEDULE_UPDATED,
+                "근무 스케줄 변경",
+                weekSchedule.getWeekScheduleName() + " 근무 스케줄에 변경사항이 있습니다.",
+                Map.of(
+                        "workPlaceId", String.valueOf(workPlace.getId()),
+                        "weekScheduleId", String.valueOf(weekSchedule.getId()),
+                        "confirmedWeekScheduleId", String.valueOf(confirmed.getId())
+                )
+        );
+    }
+
+    /**
+     * 사업장의 승인된 활성 근무자 전체에게 알림을 보낸다.
+     */
+    private void notifyAllApprovedWorkers(
+            WorkPlace workPlace,
+            WeekSchedule weekSchedule,
+            NotificationType notificationType,
+            String title,
+            String body,
+            Map<String, String> data
+    ) {
+        List<Long> workerMemberIds = crewRepository.findMemberIdsByWorkPlaceAndRole(
+                workPlace.getId(),
+                CrewJoinStatus.APPROVED,
+                CrewRole.WORKER,
+                CrewStatus.ACTIVE
+        );
+        notificationCommandService.sendToMembers(
+                workerMemberIds,
+                new NotificationSendCommand(
+                        notificationType,
+                        PushPolicy.PUSH,
+                        title,
+                        body,
+                        data
+                )
+        );
     }
 
     /**
@@ -318,6 +395,8 @@ public class ScheduleGenerationService {
                 request.restTime()
         ));
         saveManualAssignments(confirmed, workPlace.getId(), timeDetail, request.workerMemberIds());
+
+        sendScheduleUpdatedNotification(workPlace, confirmed);
 
         return ManualScheduleAssignmentResponse.of(
                 confirmed.getId(),
@@ -365,6 +444,8 @@ public class ScheduleGenerationService {
         );
 
         saveManualAssignments(confirmed, workPlace.getId(), timeDetail, request.workerMemberIds());
+
+        sendScheduleUpdatedNotification(workPlace, confirmed);
 
         return ManualScheduleAssignmentResponse.of(
             confirmed.getId(),

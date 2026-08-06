@@ -1,12 +1,17 @@
 package com.autoschedule.schedulecondition.service;
 
 import com.autoschedule.crew.domain.CrewJoinStatus;
+import com.autoschedule.crew.domain.CrewRole;
 import com.autoschedule.crew.domain.CrewStatus;
 import com.autoschedule.crew.repository.CrewRepository;
 import com.autoschedule.global.exception.ApiException;
 import com.autoschedule.global.exception.ErrorCode;
 import com.autoschedule.member.domain.Member;
 import com.autoschedule.member.repository.MemberRepository;
+import com.autoschedule.notification.domain.NotificationType;
+import com.autoschedule.notification.domain.PushPolicy;
+import com.autoschedule.notification.dto.NotificationSendCommand;
+import com.autoschedule.notification.service.NotificationCommandService;
 import com.autoschedule.schedulecondition.domain.*;
 import com.autoschedule.schedulecondition.dto.*;
 import com.autoschedule.schedulecondition.repository.DayRepository;
@@ -48,6 +53,7 @@ public class ScheduleConditionService {
     private final CrewRepository crewRepository;
     private final WorkerSelectSubmissionRepository workerSelectSubmissionRepository;
     private final WorkerUnavailableTimeDetailRepository workerUnavailableTimeDetailRepository;
+    private final NotificationCommandService notificationCommandService;
 
     /**
      * 사장이 선택한 스케줄 조건을 저장한다.
@@ -124,6 +130,8 @@ public class ScheduleConditionService {
 
             weekScheduleRepository.flush();
 
+            sendScheduleConditionCreatedNotification(workPlace, weekSchedule);
+
             return WeekScheduleResponse.from(weekSchedule); // 값들을 저장시킨뒤 주간스케줄 정보를 응답값으로 전달함
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.CONFLICT, "이미 생성된 다음 주 스케줄 조건이 있습니다.");
@@ -162,6 +170,65 @@ public class ScheduleConditionService {
                 deletedAt
         );
         weekSchedule.markDeleted(deletedAt);
+
+        sendScheduleConditionResetNotification(workPlace, weekSchedule);
+    }
+
+    /**
+     * 스케줄 조건 생성 사실을 사업장의 전체 승인 근무자에게 알린다.
+     */
+    private void sendScheduleConditionCreatedNotification(WorkPlace workPlace, WeekSchedule weekSchedule) {
+        notifyAllApprovedWorkers(
+                workPlace,
+                weekSchedule,
+                NotificationType.SCHEDULE_CONDITION_CREATED,
+                "근무 스케줄 조건 생성",
+                weekSchedule.getWeekScheduleName() + " 스케줄 조건이 생성되었습니다, 근무 불가일 제출을 시작해 주세요."
+        );
+    }
+
+    /**
+     * 스케줄 조건 초기화 사실을 사업장의 전체 승인 근무자에게 알린다.
+     */
+    private void sendScheduleConditionResetNotification(WorkPlace workPlace, WeekSchedule weekSchedule) {
+        notifyAllApprovedWorkers(
+                workPlace,
+                weekSchedule,
+                NotificationType.SCHEDULE_CONDITION_RESET,
+                "근무 스케줄 조건 초기화",
+                weekSchedule.getWeekScheduleName() + " 조건이 초기화됐습니다. 제출한 근무 불가 정보도 사라졌어요."
+        );
+    }
+
+    /**
+     * 사업장의 승인된 활성 근무자 전체에게 알림을 보낸다.
+     */
+    private void notifyAllApprovedWorkers(
+            WorkPlace workPlace,
+            WeekSchedule weekSchedule,
+            NotificationType notificationType,
+            String title,
+            String body
+    ) {
+        List<Long> workerMemberIds = crewRepository.findMemberIdsByWorkPlaceAndRole(
+                workPlace.getId(),
+                CrewJoinStatus.APPROVED,
+                CrewRole.WORKER,
+                CrewStatus.ACTIVE
+        );
+        notificationCommandService.sendToMembers(
+                workerMemberIds,
+                new NotificationSendCommand(
+                        notificationType,
+                        PushPolicy.PUSH,
+                        title,
+                        body,
+                        Map.of(
+                                "workPlaceId", String.valueOf(workPlace.getId()),
+                                "weekScheduleId", String.valueOf(weekSchedule.getId())
+                        )
+                )
+        );
     }
 
     /**

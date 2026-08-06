@@ -6,6 +6,7 @@ import com.autoschedule.auth.dto.OwnerSignupRequest;
 import com.autoschedule.auth.dto.RefreshTokenRequest;
 import com.autoschedule.auth.dto.SocialLoginRequest;
 import com.autoschedule.auth.dto.TermsAgreementRequest;
+import com.autoschedule.auth.dto.TestLoginRequest;
 import com.autoschedule.auth.dto.WorkerSignupRequest;
 import com.autoschedule.auth.jwt.IssuedTokens;
 import com.autoschedule.auth.jwt.JwtTokenProvider;
@@ -84,6 +85,21 @@ public class AuthService {
                 )
                 .map(member -> loginExistingMember(member, request.device()))
                 .orElseGet(AuthResponse::signupRequired);
+    }
+
+    /**
+     * App Store 심사용 ID/PW 테스트 계정 로그인을 처리하고 refresh token까지 포함한 로그인 토큰을 발급한다.
+     * 테스트 전용 계정이라 비밀번호는 해시 없이 평문으로 비교한다.
+     */
+    @Transactional
+    public AuthResponse testLogin(TestLoginRequest request) {
+        Member member = memberRepository.findByLoginId(request.loginId())
+                .filter(candidate -> request.password().equals(candidate.getPassword()))
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."));
+
+        validateLoginAllowed(member);
+
+        return issueLoginResponse(member, request.device());
     }
 
     /**

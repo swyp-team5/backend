@@ -87,58 +87,70 @@ class CrewManagementApiIntegrationTest {
     }
 
     /**
-     * 사장님은 본인 사업장의 근무자 개인정보와 프로필 이미지를 함께 조회할 수 있다.
+     * 사장님은 본인 사업장의 사장과 근무자 정보 및 프로필 이미지를 함께 조회할 수 있다.
      */
     @Test
-    void ownerReadsWorkerCrewsWithPrivateInformation() throws Exception {
+    void ownerReadsCrewsWithPrivateInformation() throws Exception {
         saveActiveProfileImage(worker, "https://static.example.com/worker1.png");
 
         mockMvc.perform(get("/api/work-places/{workPlaceId}/crews", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.crews.length()").value(2))
-                .andExpect(jsonPath("$.crews[0].memberId").value(worker.getId()))
-                .andExpect(jsonPath("$.crews[0].name").value("worker1"))
-                .andExpect(jsonPath("$.crews[0].phoneNumber").value("01011111111"))
-                .andExpect(jsonPath("$.crews[0].profileImageUrl")
+                .andExpect(jsonPath("$.crews.length()").value(3))
+                .andExpect(jsonPath("$.crews[0].memberId").value(owner.getId()))
+                .andExpect(jsonPath("$.crews[0].name").value("owner"))
+                .andExpect(jsonPath("$.crews[0].phoneNumber").value("01000000000"))
+                .andExpect(jsonPath("$.crews[0].profileImageUrl").value(nullValue()))
+                .andExpect(jsonPath("$.crews[0].crewRole").value("OWNER"))
+                .andExpect(jsonPath("$.crews[1].memberId").value(worker.getId()))
+                .andExpect(jsonPath("$.crews[1].name").value("worker1"))
+                .andExpect(jsonPath("$.crews[1].phoneNumber").value("01011111111"))
+                .andExpect(jsonPath("$.crews[1].profileImageUrl")
                         .value("https://static.example.com/worker1.png"))
-                .andExpect(jsonPath("$.crews[0].crewRole").value("WORKER"))
-                .andExpect(jsonPath("$.crews[0].joinStatus").value("APPROVED"))
-                .andExpect(jsonPath("$.crews[0].crewStatus").value("ACTIVE"))
-                .andExpect(jsonPath("$.crews[0].createdAt").isNotEmpty())
-                .andExpect(jsonPath("$.crews[1].memberId").value(secondWorker.getId()))
-                .andExpect(jsonPath("$.crews[1].phoneNumber").value("01022222222"))
-                .andExpect(jsonPath("$.crews[1].profileImageUrl").value(nullValue()));
+                .andExpect(jsonPath("$.crews[1].crewRole").value("WORKER"))
+                .andExpect(jsonPath("$.crews[1].joinStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.crews[1].crewStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.crews[1].createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.crews[2].memberId").value(secondWorker.getId()))
+                .andExpect(jsonPath("$.crews[2].phoneNumber").value("01022222222"))
+                .andExpect(jsonPath("$.crews[2].profileImageUrl").value(nullValue()));
     }
 
     /**
-     * 근무자는 같은 사업장의 근무자 이름과 프로필 이미지만 조회하고 휴대폰 번호는 볼 수 없다.
+     * 근무자는 같은 사업장의 사장과 근무자 이름, 역할, 프로필 이미지만 조회한다.
      */
     @Test
-    void workerReadsWorkerCrewsWithoutPrivateInformation() throws Exception {
+    void workerReadsCrewsWithoutPrivateInformation() throws Exception {
         saveActiveProfileImage(secondWorker, "https://static.example.com/worker2.png");
 
         mockMvc.perform(get("/api/work-places/{workPlaceId}/crews", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(worker)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.crews.length()").value(2))
-                .andExpect(jsonPath("$.crews[0].memberId").value(worker.getId()))
-                .andExpect(jsonPath("$.crews[0].name").value("worker1"))
+                .andExpect(jsonPath("$.crews.length()").value(3))
+                .andExpect(jsonPath("$.crews[0].memberId").value(owner.getId()))
+                .andExpect(jsonPath("$.crews[0].name").value("owner"))
+                .andExpect(jsonPath("$.crews[0].crewRole").value("OWNER"))
                 .andExpect(jsonPath("$.crews[0].profileImageUrl").value(nullValue()))
                 .andExpect(jsonPath("$.crews[0].phoneNumber").doesNotExist())
                 .andExpect(jsonPath("$.crews[0].joinStatus").doesNotExist())
-                .andExpect(jsonPath("$.crews[1].memberId").value(secondWorker.getId()))
-                .andExpect(jsonPath("$.crews[1].name").value("worker2"))
-                .andExpect(jsonPath("$.crews[1].profileImageUrl")
+                .andExpect(jsonPath("$.crews[1].memberId").value(worker.getId()))
+                .andExpect(jsonPath("$.crews[1].name").value("worker1"))
+                .andExpect(jsonPath("$.crews[1].crewRole").value("WORKER"))
+                .andExpect(jsonPath("$.crews[1].profileImageUrl").value(nullValue()))
+                .andExpect(jsonPath("$.crews[1].phoneNumber").doesNotExist())
+                .andExpect(jsonPath("$.crews[2].memberId").value(secondWorker.getId()))
+                .andExpect(jsonPath("$.crews[2].name").value("worker2"))
+                .andExpect(jsonPath("$.crews[2].crewRole").value("WORKER"))
+                .andExpect(jsonPath("$.crews[2].profileImageUrl")
                         .value("https://static.example.com/worker2.png"))
-                .andExpect(jsonPath("$.crews[1].phoneNumber").doesNotExist());
+                .andExpect(jsonPath("$.crews[2].phoneNumber").doesNotExist());
     }
 
     /**
      * 사업장에 소속되지 않은 근무자는 해당 사업장의 근무자 목록을 조회할 수 없다.
      */
     @Test
-    void outsiderWorkerCannotReadWorkerCrews() throws Exception {
+    void outsiderWorkerCannotReadCrews() throws Exception {
         mockMvc.perform(get("/api/work-places/{workPlaceId}/crews", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(outsiderWorker)))
                 .andExpect(status().isForbidden())
@@ -175,8 +187,9 @@ class CrewManagementApiIntegrationTest {
         mockMvc.perform(get("/api/work-places/{workPlaceId}/crews", workPlace.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.crews.length()").value(1))
-                .andExpect(jsonPath("$.crews[0].memberId").value(secondWorker.getId()));
+                .andExpect(jsonPath("$.crews.length()").value(2))
+                .andExpect(jsonPath("$.crews[0].memberId").value(owner.getId()))
+                .andExpect(jsonPath("$.crews[1].memberId").value(secondWorker.getId()));
     }
 
     /**

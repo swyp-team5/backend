@@ -1,107 +1,113 @@
-[ SWYP 앱 5기 5팀 프로젝트 ]
+# AutoSchedule Backend
 
-## 프로젝트 소개
+사장님과 근무자가 함께 사용하는 자동 근무표 생성 서비스의 Spring Boot 백엔드입니다.
 
-AutoSchedule은 일정 관리 및 자동 스케줄링 기능을 중심으로 하는 앱 서비스입니다.  
-본 레포지토리는 AutoSchedule 서비스의 백엔드 API 서버를 관리합니다.
+## 주요 기능
 
-현재 프로젝트명은 가칭이며, 추후 서비스명 확정에 따라 변경될 수 있습니다.
+- Google, Kakao, Apple 소셜 로그인과 JWT 인증
+- 사업장 생성, 크루 초대 및 근무자 관리
+- 근무 조건 생성과 근무 불가 시간 제출
+- 자동 스케줄 생성, 미리보기, 확정 및 수동 편집
+- 교대 및 대타 요청·승인
+- 공지사항, 댓글, 공감 및 이미지 첨부
+- 앱 내 알림과 FCM 푸시 알림
+- S3 presigned URL 기반 프로필·공지 이미지 업로드
 
----
 ## 기술 스택
 
-### Language
+| 구분 | 기술 |
+| --- | --- |
+| Language | Java 21 |
+| Framework | Spring Boot 3.5.14, Spring Web MVC, Spring Security |
+| Persistence | Spring Data JPA, MySQL 8.4 |
+| Cache | Redis 7.2 |
+| Authentication | JWT, Google/Kakao/Apple Social Login |
+| Infrastructure | Docker, AWS S3, Firebase Cloud Messaging |
+| API Documentation | SpringDoc OpenAPI, Swagger UI |
+| Test | JUnit 5, MockMvc, Mockito, AssertJ, Testcontainers |
+| Monitoring | Spring Boot Actuator, Micrometer Prometheus |
 
-- Java 21
+## 프로젝트 구조
 
-### Framework
+기능 도메인별 패키지 안에서 `controller`, `service`, `repository`, `domain`, `dto` 책임을 분리한 레이어드 아키텍처를 사용합니다.
 
-- Spring Boot 3.5.14
-- Spring Web
-- Spring Security
-- Spring Data JPA
-- Spring Validation
+```text
+src/main/java/com/autoschedule
+├── auth
+├── crew
+├── global
+├── member
+├── notice
+├── notification
+├── schedule
+├── schedulecondition
+├── terms
+├── workchange
+├── workerselect
+└── workplace
+```
 
-### Database / Cache
+## 로컬 실행
 
-- MySQL
-- Redis
+### 준비 사항
 
-### Authentication
+- Docker Desktop 또는 Docker Engine
+- 프로젝트 환경변수가 정의된 `.env` 파일
 
-- Spring Security
-- JWT
+환경변수와 외부 서비스 인증 파일은 저장소에 커밋하지 않습니다.
 
-### API Documentation
+### Docker Compose 실행
 
-- SpringDoc OpenAPI / Swagger UI
+```powershell
+docker compose up --build
+```
 
-### Monitoring
+Spring Boot, MySQL, Redis가 함께 실행되며 MySQL 최초 실행 시 `DDL_V9.sql`과 로컬 seed 데이터가 적용됩니다.
 
-- Spring Boot Actuator
-- Micrometer Prometheus Registry
-- Grafana Dashboard
+```text
+Health Check: http://localhost:{APP_PORT}/actuator/health
+Swagger UI:  http://localhost:{APP_PORT}/swagger-ui/index.html
+```
 
-### Test
+포트와 환경변수 설정을 포함한 자세한 내용은 [LOCAL_DOCKER.md](LOCAL_DOCKER.md)를 참고합니다.
 
-- JUnit 5
-- Spring Boot Test
-- Spring MVC Test / MockMvc
-- Spring Security Test
-- AssertJ
-- Mockito
-- Testcontainers
+## 테스트
 
----
+Windows:
+
+```powershell
+.\gradlew.bat clean test
+```
+
+Unix 계열:
+
+```bash
+./gradlew clean test
+```
+
+MySQL 또는 Redis가 필요한 통합 테스트는 Testcontainers 기반으로 실행됩니다.
 
 ## API 문서
 
-서버 실행 후 Swagger UI에서 API 문서를 확인할 수 있습니다.
+- 전체 API 명세: [API_SPEC.md](API_SPEC.md)
+- 로컬 Swagger UI: `http://localhost:{APP_PORT}/swagger-ui/index.html`
 
-```text
-http://localhost:8080/swagger-ui/index.html
-```
-
----
-
+모든 서비스 API는 `/api/*` 경로를 사용합니다.
 
 ## 브랜치 전략
 
-본 프로젝트는 단순한 Git Flow 전략을 사용합니다.
+Simple Git Flow를 사용합니다.
 
-| 브랜치        | 설명           |
-| ---------- | ------------ |
-| main       | 배포 가능한 안정 버전 |
-| develop    | 개발 통합 브랜치    |
-| feature/*  | 기능 개발 브랜치    |
+| 브랜치 | 용도 |
+| --- | --- |
+| `main` | 운영 배포 기준 브랜치 |
+| `develop` | 개발 통합 브랜치 |
+| `feature/*` | 기능 개발 브랜치 |
 
-브랜치 예시:
+커밋 메시지는 `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, `perf:` 등의 타입을 사용하고 본문은 한글로 작성합니다.
 
-```text
-feature/1-member-login
-```
+## 보안 원칙
 
----
-
-## 커밋 컨벤션
-
-| 타입       | 설명            |
-| -------- | ------------- |
-| feat     | 새로운 기능 추가     |
-| fix      | 버그 수정         |
-| refactor | 리팩터링          |
-| docs     | 문서 수정         |
-| test     | 테스트 코드 추가/수정  |
-| chore    | 빌드, 설정, 기타 작업 |
-| style    | 코드 포맷팅        |
-| perf     | 성능 개선         |
-
-커밋 예시:
-
-```bash
-git commit -m "feat: add member login api"
-git commit -m "fix: resolve token validation error"
-git commit -m "docs: update README"
-```
-
-
+- 비밀 키, 토큰, 인증서 및 실제 환경변수 파일을 커밋하지 않습니다.
+- 운영 설정은 환경변수와 배포 시점의 비공개 설정 파일로 주입합니다.
+- 데이터베이스 스키마의 최종 기준은 `src/main/resources/db/DDL_V9.sql`입니다.

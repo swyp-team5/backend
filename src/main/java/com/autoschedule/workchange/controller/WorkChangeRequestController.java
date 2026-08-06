@@ -117,9 +117,13 @@ public class WorkChangeRequestController {
             @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
             @PathVariable Long workPlaceId,
             @PathVariable Long requestId,
-            @Valid @RequestBody WorkChangeRejectionRequest request
+            @Valid @RequestBody(required = false) WorkChangeRejectionRequest request
     ) {
-        return workChangeRequestService.rejectByTarget(principal.memberId(), workPlaceId, requestId, request);
+        return workChangeRequestService.rejectByTarget(
+            principal.memberId(),
+            workPlaceId,
+            requestId,
+            request == null ? WorkChangeRejectionRequest.empty() : request);
     }
 
     /**
@@ -157,8 +161,12 @@ public class WorkChangeRequestController {
             @AuthenticationPrincipal JwtAuthenticationPrincipal principal,
             @PathVariable Long workPlaceId,
             @PathVariable Long requestId,
-            @Valid @RequestBody WorkChangeRejectionRequest request
+            @Valid @RequestBody(required = false) WorkChangeRejectionRequest request
     ) {
-        return workChangeRequestService.rejectByOwner(principal.memberId(), workPlaceId, requestId, request);
+        return workChangeRequestService.rejectByOwner(
+            principal.memberId(),
+            workPlaceId,
+            requestId,
+            request == null ? WorkChangeRejectionRequest.empty() : request);
     }
 }
