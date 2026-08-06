@@ -4,6 +4,8 @@ CREATE TABLE member
     social_provider VARCHAR(20)  NOT NULL,
     social_subject  VARCHAR(255) NOT NULL,
     social_email    VARCHAR(255) NULL,
+    login_id        VARCHAR(50)  NULL,
+    password        VARCHAR(255) NULL,
     name            VARCHAR(10)  NOT NULL,
     phone_number    CHAR(11)     NOT NULL,
     role            VARCHAR(20)  NOT NULL,
@@ -15,7 +17,10 @@ CREATE TABLE member
     PRIMARY KEY (member_id),
 
     CONSTRAINT uk_member_social_provider_subject
-        UNIQUE (social_provider, social_subject)
+        UNIQUE (social_provider, social_subject),
+
+    CONSTRAINT uk_member_login_id
+        UNIQUE (login_id)
 
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
